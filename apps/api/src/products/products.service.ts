@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { FieldType } from '@prisma/client';
 import { existsSync, unlinkSync } from 'fs';
 import { join, resolve } from 'path';
@@ -7,9 +7,64 @@ import { PrismaService } from '../prisma/prisma.service';
 import { pageResult, readPage } from '../common/paging';
 import { rowsFromProductFile } from './product-file';
 
+const DEFAULT_UNITS = ['كيلو', 'ك', 'قطعة', 'عدد', 'لتر', 'متر', 'كرتونة', 'شيكارة', 'طن'];
+
 @Injectable()
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
+
+  private async ensureDefaultUnits() {
+    const count = await this.prisma.measureUnit.count();
+    if (count > 0) return;
+    for (const name of DEFAULT_UNITS) {
+      await this.prisma.measureUnit.upsert({
+        where: { name },
+        create: { name },
+        update: {},
+      });
+    }
+  }
+
+  async listUnits() {
+    await this.ensureDefaultUnits();
+    // أضف أي وحدات مستخدمة في الأصناف ومش متسجلة
+    const used = await this.prisma.product.findMany({
+      where: { unit: { not: '' } },
+      select: { unit: true },
+      distinct: ['unit'],
+    });
+    for (const row of used) {
+      const name = row.unit.trim();
+      if (!name) continue;
+      await this.prisma.measureUnit.upsert({
+        where: { name },
+        create: { name },
+        update: {},
+      });
+    }
+    return this.prisma.measureUnit.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  async createUnit(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new BadRequestException('اسم وحدة القياس مطلوب');
+    return this.prisma.measureUnit.upsert({
+      where: { name: trimmed },
+      create: { name: trimmed },
+      update: {},
+    });
+  }
+
+  private async ensureUnit(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return 'كيلو';
+    await this.prisma.measureUnit.upsert({
+      where: { name: trimmed },
+      create: { name: trimmed },
+      update: {},
+    });
+    return trimmed;
+  }
 
   listFields() {
     return this.prisma.productCustomField.findMany({
@@ -180,17 +235,21 @@ export class ProductsService {
     warehouseIds?: string[];
   }) {
     const { fieldValues, warehouseIds, ...rest } = data;
+    const sku = rest.sku?.trim() || '';
+    if (!sku) throw new BadRequestException('كود الصنف مطلوب');
+    const exists = await this.prisma.product.findUnique({ where: { sku } });
+    if (exists) throw new ConflictException('كود الصنف مستخدم مسبقًا');
     rest.barcode = rest.barcode?.trim() || null;
     rest.brand = rest.brand?.trim() || null;
     rest.categoryId = rest.categoryId || null;
     rest.packUnit = rest.packUnit?.trim() || 'بكرة';
-    rest.unit = rest.unit?.trim() || 'كيلو';
+    rest.unit = await this.ensureUnit(rest.unit || 'كيلو');
     const cleaned = (fieldValues || []).filter((fv) => fv.value?.trim());
     const uniqueWarehouses = [...new Set((warehouseIds || []).map((id) => id.trim()).filter(Boolean))];
     return this.prisma.product.create({
       data: {
         ...rest,
-        sku: autoCode('P', rest.sku),
+        sku,
         fieldValues: cleaned.length ? { create: cleaned } : undefined,
         warehouses: uniqueWarehouses.length
           ? { create: uniqueWarehouses.map((warehouseId) => ({ warehouseId })) }
@@ -226,7 +285,14 @@ export class ProductsService {
     if (rest.brand !== undefined) rest.brand = rest.brand?.trim() || null;
     if (rest.categoryId !== undefined) rest.categoryId = rest.categoryId || null;
     if (rest.packUnit !== undefined) rest.packUnit = rest.packUnit?.trim() || 'بكرة';
-    if (rest.sku !== undefined) rest.sku = autoCode('P', rest.sku);
+    if (rest.unit !== undefined) rest.unit = await this.ensureUnit(rest.unit || 'كيلو');
+    if (rest.sku !== undefined) {
+      const sku = rest.sku.trim();
+      if (!sku) throw new BadRequestException('كود الصنف مطلوب');
+      const taken = await this.prisma.product.findFirst({ where: { sku, NOT: { id } } });
+      if (taken) throw new ConflictException('كود الصنف مستخدم مسبقًا');
+      rest.sku = sku;
+    }
     if (fieldValues) {
       await this.prisma.productFieldValue.deleteMany({ where: { productId: id } });
       const cleaned = fieldValues.filter((fv) => fv.value?.trim());
@@ -276,7 +342,7 @@ export class ProductsService {
       }
       try {
         await this.create({
-          sku: sku || undefined,
+          sku: sku || autoCode('P'),
           name,
           unit: row.unit?.trim() || 'كيلو',
           salePrice: Number(row.salePrice) || 0,
@@ -285,8 +351,11 @@ export class ProductsService {
           packUnit: 'بكرة',
         });
         created += 1;
-      } catch {
-        errors.push({ row: index + 1, message: `تعذر حفظ ${name}` });
+      } catch (err) {
+        errors.push({
+          row: index + 1,
+          message: err instanceof Error ? err.message : `تعذر حفظ ${name}`,
+        });
       }
     }
     return { created, failed: errors.length, errors };

@@ -34,7 +34,7 @@ class UpdateProductFieldDto {
 }
 
 class ProductDto {
-  @IsOptional() @IsString() sku?: string;
+  @IsString() sku!: string;
   @IsString() name!: string;
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsNumber() costPrice?: number;
@@ -117,6 +117,17 @@ export class ProductsController {
   @Roles(Role.ADMIN, Role.WAREHOUSE)
   deleteField(@Param('fieldId') fieldId: string) {
     return this.service.deleteField(fieldId);
+  }
+
+  @Get('units')
+  listUnits() {
+    return this.service.listUnits();
+  }
+
+  @Post('units')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  createUnit(@Body() body: { name: string }) {
+    return this.service.createUnit(body.name);
   }
 
   @Get('categories')

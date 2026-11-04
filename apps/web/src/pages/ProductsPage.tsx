@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Barcode, Boxes, Coins, Columns3, Package, Pencil, Plus, Tag, TrendingDown, TriangleAlert, Upload, Warehouse } from 'lucide-react';
 import { loadExcel } from '../lib/excel';
 import { api, formatMoney, getApiBase, initialQuery, productImageUrl } from '../lib/api';
@@ -76,13 +76,15 @@ const emptyCreate = {
 type ProductForm = typeof emptyCreate;
 
 function productIssues(form: ProductForm, items: Product[], ignoreId?: string, _costPrice = 0) {
-  const errors: Partial<Record<'sku' | 'name' | 'barcode', string>> = {};
+  const errors: Partial<Record<'sku' | 'name' | 'barcode' | 'unit', string>> = {};
   const warnings: Record<string, string> = {};
   const sku = form.sku.trim();
   const name = form.name.trim();
   const barcode = form.barcode.trim();
-  if (sku && items.some((item) => item.id !== ignoreId && item.sku.toLowerCase() === sku.toLowerCase())) errors.sku = 'هذا الكود مستخدم لصنف آخر';
+  if (!sku) errors.sku = 'كود الصنف مطلوب';
+  else if (items.some((item) => item.id !== ignoreId && item.sku.toLowerCase() === sku.toLowerCase())) errors.sku = 'هذا الكود مستخدم لصنف آخر';
   if (name.length < 2) errors.name = 'اكتب اسمًا من حرفين على الأقل';
+  if (!form.unit.trim()) errors.unit = 'اختَر وحدة القياس';
   if (barcode && items.some((item) => item.id !== ignoreId && item.barcode && item.barcode === barcode)) errors.barcode = 'هذا الباركود مسجل لصنف آخر';
   return { errors, warnings };
 }
@@ -101,6 +103,7 @@ function ProductFormWizard({
   setFieldValues,
   costPrice,
   onAddCategory,
+  onAddUnit,
   onSubmit,
   submitLabel,
 }: {
@@ -115,12 +118,15 @@ function ProductFormWizard({
   setFieldValues: (values: Record<string, string>) => void;
   costPrice?: number;
   onAddCategory: (name: string) => Promise<string>;
+  onAddUnit: (name: string) => Promise<string>;
   onSubmit: () => void;
   submitLabel: string;
 }) {
   const [step, setStep] = useState(0);
   const [categoryName, setCategoryName] = useState('');
-  const blocked = step === 0 && !!(issues.errors.sku || issues.errors.name || issues.errors.barcode);
+  const [unitName, setUnitName] = useState('');
+  const [addingUnit, setAddingUnit] = useState(false);
+  const blocked = step === 0 && !!(issues.errors.sku || issues.errors.name || issues.errors.barcode || issues.errors.unit);
 
   return (
     <div>
@@ -141,21 +147,41 @@ function ProductFormWizard({
       </div>
       {step === 0 && (
         <div className="space-y-3">
-          <Field label="كود الصنف (اختياري)" icon={<Tag size={16} />} error={issues.errors.sku} hint="لو سيبته فاضي يتولّد تلقائيًا">
-            <Input value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} placeholder="اختياري" />
+          <Field label="كود الصنف" icon={<Tag size={16} />} error={issues.errors.sku} hint="إجباري ومش يتكرر">
+            <Input value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} placeholder="مثال: GZ-001" required />
           </Field>
           <Field label="اسم الصنف" icon={<Package size={16} />} error={issues.errors.name}>
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Field>
-          <Field label="وحدة القياس" icon={<Boxes size={16} />} hint="النظام بالكيلو">
+          <Field label="وحدة القياس" icon={<Boxes size={16} />} error={issues.errors.unit} hint="اختَر من القائمة أو أضف وحدة جديدة">
             <Select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}>
-              <option value="كيلو">كيلو</option>
-              <option value="ك">ك</option>
-              {units.filter((unit) => unit !== 'كيلو' && unit !== 'ك' && unit !== 'عدد' && unit !== 'قطعة').map((unit) => (
+              {units.length === 0 && <option value={form.unit || 'كيلو'}>{form.unit || 'كيلو'}</option>}
+              {units.map((unit) => (
                 <option key={unit} value={unit}>{unit}</option>
               ))}
             </Select>
           </Field>
+          <div className="flex gap-2">
+            <Input value={unitName} onChange={(event) => setUnitName(event.target.value)} placeholder="وحدة قياس جديدة" />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={addingUnit || !unitName.trim()}
+              onClick={async () => {
+                if (!unitName.trim()) return;
+                setAddingUnit(true);
+                try {
+                  const name = await onAddUnit(unitName.trim());
+                  setForm({ ...form, unit: name });
+                  setUnitName('');
+                } finally {
+                  setAddingUnit(false);
+                }
+              }}
+            >
+              <Plus size={16} /> إضافة وحدة
+            </Button>
+          </div>
           <Field label="الباركود" icon={<Barcode size={16} />} error={issues.errors.barcode}>
             <Input value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} />
           </Field>
@@ -244,6 +270,7 @@ export function ProductsPage() {
   const [stats, setStats] = useState({ total: 0, low: 0, noBarcode: 0, loss: 0, stockValue: 0, units: 0, brands: [] as string[], unitNames: [] as string[] });
   const [fields, setFields] = useState<CustomField[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [measureUnits, setMeasureUnits] = useState<string[]>(['كيلو']);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [search, setSearch] = useState(initialQuery);
   const [createOpen, setCreateOpen] = useState(false);
@@ -267,10 +294,11 @@ export function ProductsPage() {
     const params = new URLSearchParams({ page: String(listPage), pageSize: String(pageSize) });
     if (search.trim()) params.set('search', search.trim());
     if (listFilter !== 'all') params.set('filter', listFilter);
-    const [products, defs, cats, wh] = await Promise.all([
+    const [products, defs, cats, unitRows, wh] = await Promise.all([
       api<{ items: Product[]; total: number; summary: typeof stats }>(`/products?${params}`),
       api<CustomField[]>('/products/fields'),
       api<{ id: string; name: string }[]>('/products/categories'),
+      api<{ id: string; name: string }[]>('/products/units'),
       api<{ id: string; name: string }[]>('/warehouses'),
     ]);
     setItems(products.items);
@@ -278,6 +306,7 @@ export function ProductsPage() {
     setStats(products.summary);
     setFields(defs);
     setCategories(cats);
+    setMeasureUnits(unitRows.map((row) => row.name));
     setWarehouses(wh);
   }
 
@@ -300,7 +329,13 @@ export function ProductsPage() {
     { id: 'qty', label: 'الرصيد' },
     ...fields.slice(0, 3).map((field) => ({ id: `field-${field.id}`, label: field.label })),
   ]);
-  const units = stats.unitNames;
+  const units = useMemo(() => {
+    const set = new Set(measureUnits);
+    for (const name of stats.unitNames || []) if (name) set.add(name);
+    if (createForm.unit) set.add(createForm.unit);
+    if (editForm.unit) set.add(editForm.unit);
+    return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
+  }, [measureUnits, stats.unitNames, createForm.unit, editForm.unit]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -365,17 +400,17 @@ export function ProductsPage() {
 
   async function saveCreate() {
     const problems = productIssues(createForm, items).errors;
-    if (problems.sku || problems.name || problems.barcode) {
-      toast.error('راجع الحقول المظللة قبل الحفظ');
+    if (problems.sku || problems.name || problems.barcode || problems.unit) {
+      toast.error(problems.sku || problems.unit || 'راجع الحقول المظللة قبل الحفظ');
       return;
     }
     try {
       const created = await api<{ id: string }>('/products', {
         method: 'POST',
         body: JSON.stringify({
-          sku: createForm.sku.trim() || undefined,
+          sku: createForm.sku.trim(),
           name: createForm.name.trim(),
-          unit: createForm.unit || 'كيلو',
+          unit: createForm.unit.trim() || 'كيلو',
           costPrice: 0,
           salePrice: 0,
           wholesalePrice: 0,
@@ -429,17 +464,17 @@ export function ProductsPage() {
   async function saveEdit() {
     if (!editing) return;
     const problems = productIssues(editForm, items, editing.id, editing.costPrice).errors;
-    if (problems.sku || problems.name || problems.barcode) {
-      toast.error('راجع الحقول المظللة قبل الحفظ');
+    if (problems.sku || problems.name || problems.barcode || problems.unit) {
+      toast.error(problems.sku || problems.unit || 'راجع الحقول المظللة قبل الحفظ');
       return;
     }
     try {
       await api(`/products/${editing.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          sku: editForm.sku.trim() || undefined,
+          sku: editForm.sku.trim(),
           name: editForm.name.trim(),
-          unit: editForm.unit || 'كيلو',
+          unit: editForm.unit.trim() || 'كيلو',
           barcode: editForm.barcode.trim(),
           brand: editForm.brand,
           categoryId: editForm.categoryId || null,
@@ -532,6 +567,16 @@ export function ProductsPage() {
     setCategories((prev) => (prev.some((row) => row.id === cat.id) ? prev : [...prev, cat]));
     toast.success('تمت إضافة التصنيف');
     return cat.id;
+  }
+
+  async function addUnit(name: string) {
+    const unit = await api<{ id: string; name: string }>('/products/units', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    setMeasureUnits((prev) => (prev.includes(unit.name) ? prev : [...prev, unit.name]));
+    toast.success('تمت إضافة وحدة القياس');
+    return unit.name;
   }
 
   return (
@@ -706,6 +751,7 @@ export function ProductsPage() {
           fieldValues={createFieldValues}
           setFieldValues={setCreateFieldValues}
           onAddCategory={addCategory}
+          onAddUnit={addUnit}
           onSubmit={saveCreate}
           submitLabel="حفظ الصنف"
         />
@@ -754,6 +800,11 @@ export function ProductsPage() {
               const id = await addCategory(name);
               setEditForm((current) => ({ ...current, categoryId: id }));
               return id;
+            }}
+            onAddUnit={async (name) => {
+              const unit = await addUnit(name);
+              setEditForm((current) => ({ ...current, unit }));
+              return unit;
             }}
             onSubmit={saveEdit}
             submitLabel="حفظ التعديلات"

@@ -172,6 +172,13 @@ model ProductCustomField {
   values ProductFieldValue[]
 }
 
+/// وحدات القياس المتاحة عند إضافة/تعديل الأصناف (قابلة للإضافة من الواجهة)
+model MeasureUnit {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
 model Product {
   id          String   @id @default(cuid())
   sku         String   @unique
