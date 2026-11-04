@@ -1,0 +1,22 @@
+node_modules
+**/node_modules
+**/dist
+.env
+.env.*
+**/.env
+**/.env.*
+*.db
+*.db-journal
+**/backups
+**/uploads
+logs
+*.log
+.wrangler
+apps/desktop
+deploy
+NAVY PROFILE PIC AK TECH.png
+*.zip
+_*.txt
+.env.local
+.env.m5azen.pull
+.env.turso

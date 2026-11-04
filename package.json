@@ -1,0 +1,31 @@
+{
+  "name": "m5azen",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @m5azen/api",
+    "dev:web": "npm run dev -w @m5azen/web",
+    "dev:desktop": "npm run build:prod && node scripts/dev-desktop.mjs",
+    "build:web": "npm run build -w @m5azen/web",
+    "build:api": "npm run build -w @m5azen/api",
+    "build:prod": "npm run build:web && npm run build:api",
+    "start:prod": "npm run start:prod -w @m5azen/api",
+    "online": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/online.ps1",
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "prepare:desktop": "node scripts/prepare-desktop.mjs",
+    "build:desktop": "node scripts/prepare-desktop.mjs && npm run dist -w @m5azen/desktop",
+    "pack:desktop:anywhere": "node scripts/pack-anywhere-installer.mjs",
+    "dev:desktop:tauri": "npm run tauri -w @m5azen/desktop -- dev",
+    "db:generate": "npm run prisma:generate -w @m5azen/api",
+    "db:push": "npm run prisma:push -w @m5azen/api",
+    "db:seed": "npm run prisma:seed -w @m5azen/api",
+    "setup": "npm install && npm run db:generate"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "name": "@m5azen/desktop",
+  "version": "1.0.1",
+  "private": true,
+  "description": "Pro Pack - نظام إدارة المخازن والطباعة",
+  "author": "AK Tech",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir",
+    "tauri": "tauri"
+  },
+  "build": {
+    "appId": "com.propack.app",
+    "productName": "ProPack",
+    "copyright": "Copyright (c) Pro Pack",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "server-pack",
+        "to": "server"
+      },
+      {
+        "from": "node-runtime",
+        "to": "node",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "signDlls": false,
+      "executableName": "ProPack",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "ProPack-portable-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Pro Pack",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "ProPack-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": true,
+      "installerLanguages": [
+        "en_US"
+      ],
+      "language": "1033"
+    }
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.2.7",
+    "electron": "35.1.2",
+    "electron-builder": "25.1.8"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.2.0"
+  }
+}
