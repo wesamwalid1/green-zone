@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './lib/auth';
-import { NAV_ITEMS } from './lib/nav';
+import { getHomePath, NAV_ITEMS } from './lib/nav';
 import { AppLayout } from './components/AppLayout';
+import { ForbiddenAccess } from './components/ForbiddenAccess';
 import { PageSkeleton } from './components/ui';
 import { LoginPage } from './pages/LoginPage';
 
@@ -35,8 +36,13 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ de
 function PageGuard({ page, children }: { page: string; children: React.ReactNode }) {
   const { user } = useAuth();
   if (user?.access && !user.access[page]?.view) {
-    const next = NAV_ITEMS.find((item) => user.access?.[item.page]?.view);
-    return <Navigate to={next?.to || '/login'} replace />;
+    // لوحة التحكم: روح لأول شاشة مسموحة بدل رسالة «مفيش صلاحية»
+    if (page === 'dashboard') {
+      const home = getHomePath(user);
+      if (home !== '/') return <Navigate to={home} replace />;
+    }
+    const label = NAV_ITEMS.find((item) => item.page === page)?.label;
+    return <ForbiddenAccess pageLabel={label} />;
   }
   return <>{children}</>;
 }

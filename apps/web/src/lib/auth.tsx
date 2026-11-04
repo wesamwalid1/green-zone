@@ -13,6 +13,7 @@ type User = {
   id: string;
   username: string;
   fullName: string;
+  jobTitle?: string | null;
   role: string;
   /** فارغ = كل المخازن (مدير أو من غير ربط). غير فارغ = مخازن المستخدم فقط. */
   warehouseIds?: string[];
@@ -57,6 +58,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('m5azen_token');
     setUser(null);
   }, []);
+
+  // نبضة حضور للسيرفر طول ما الجلسة مفتوحة (أونلاين = متصل بالـ API)
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const beat = () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      api('/auth/heartbeat', { method: 'POST', body: '{}' }).catch(() => undefined);
+    };
+    beat();
+    const timer = window.setInterval(beat, 45_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') beat();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [user]);
 
   const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
 

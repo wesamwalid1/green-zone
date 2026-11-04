@@ -103,12 +103,16 @@ model User {
   username     String   @unique
   passwordHash String
   fullName     String
+  jobTitle     String?
   role         Role     @default(SALES)
   permissions  String?
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  isActive          Boolean   @default(true)
+  failedLoginCount  Int       @default(0)
+  loginLocked       Boolean   @default(false)
+  lastLoginAt       DateTime?
+  lastSeenAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   cashTransactions CashTransaction[]
   salesInvoices    SalesInvoice[]    @relation("SalesCreatedBy")

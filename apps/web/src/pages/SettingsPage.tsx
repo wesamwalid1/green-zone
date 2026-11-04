@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Building2, DatabaseBackup, FileArchive, Lock, Save, Server, ShieldCheck, UserPlus, Users, Warehouse } from 'lucide-react';
-import { api, getApiBase, setApiBase, setSettingsToken } from '../lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { Building2, DatabaseBackup, FileArchive, Lock, Pencil, Save, Server, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { PAGES, accessFromPages, normalizeAccess, parseAccess, type AccessMap, type PageId } from '@m5azen/shared';
+import { api, formatRelative, getApiBase, setApiBase, setSettingsToken } from '../lib/api';
 import { ROLE_LABELS } from '../lib/nav';
 import { useAuth } from '../lib/auth';
 import { useConfirm, useToast } from '../lib/feedback';
 import { AppearanceSettings } from '../components/AppearanceSettings';
-import { UserAccess } from '../components/UserAccess';
-import { WarehouseMultiSelect } from '../components/WarehouseMultiSelect';
-import type { AccessMap } from '@m5azen/shared';
-import { Badge, Button, Card, CardHeader, Empty, Input, Label, PageHeader, Select, Table, Td, Th, type Tone } from '../components/ui';
+import { ScreenPermissionsPicker } from '../components/UserAccess';
+import { Badge, Button, Card, CardHeader, Empty, Input, Label, PageHeader, Table, Td, Th, type Tone } from '../components/ui';
 
 const ROLE_TONE: Record<string, Tone> = { ADMIN: 'brand', ACCOUNTANT: 'violet', WAREHOUSE: 'amber', SALES: 'emerald' };
 
@@ -18,11 +17,30 @@ type SettingsUser = {
   id: string;
   username: string;
   fullName: string;
+  jobTitle?: string | null;
   role: string;
   isActive: boolean;
+  loginLocked?: boolean;
+  failedLoginCount?: number;
+  online?: boolean;
+  lastSeenAt?: string | null;
+  lastLoginAt?: string | null;
+  lastAppearanceAt?: string | null;
   permissions: string | null;
-  warehouseLinks?: { warehouseId: string; warehouse?: { id: string; name: string } }[];
 };
+
+function pageIdsFromPermissions(permissions: string | null, role: string): PageId[] {
+  const access = permissions ? normalizeAccess(JSON.parse(permissions), role) : parseAccess(null, role);
+  return PAGES.filter((page) => access[page.id]?.view).map((page) => page.id);
+}
+
+function pageLabels(permissions: string | null, role: string): string {
+  const ids = pageIdsFromPermissions(permissions, role);
+  if (role === 'ADMIN' && (!permissions || ids.length === PAGES.length)) return 'كل الشاشات';
+  if (!ids.length) return 'بدون صلاحيات';
+  if (ids.length <= 3) return ids.map((id) => PAGES.find((page) => page.id === id)?.label || id).join(' · ');
+  return `${ids.length} شاشة`;
+}
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -35,11 +53,9 @@ export function SettingsPage() {
   const [companyAddress, setCompanyAddress] = useState('');
   const [apiUrl, setApiUrl] = useState(getApiBase());
   const [users, setUsers] = useState<SettingsUser[]>([]);
-  const [accessUser, setAccessUser] = useState<string | null>(null);
-  const [warehousesUser, setWarehousesUser] = useState<string | null>(null);
-  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
-  const [userForm, setUserForm] = useState({ username: '', password: '', fullName: '', role: 'SALES', warehouseIds: [] as string[] });
-  const [editWarehouseIds, setEditWarehouseIds] = useState<string[]>([]);
+  const [userForm, setUserForm] = useState({ username: '', password: '', fullName: '', jobTitle: '', pages: [] as PageId[] });
+  const [editUserId, setEditUserId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ username: '', fullName: '', jobTitle: '', password: '', pages: [] as PageId[], isActive: true });
   const [backups, setBackups] = useState<string[]>([]);
   const [editingLook, setEditingLook] = useState(false);
   const [busy, setBusy] = useState<'' | 'settings' | 'backup' | 'user' | 'period'>('');
@@ -47,6 +63,7 @@ export function SettingsPage() {
   const [periodLog, setPeriodLog] = useState<PeriodLog[]>([]);
   const [reopenKey, setReopenKey] = useState('');
   const [reopenReason, setReopenReason] = useState('');
+  const editingUser = useMemo(() => users.find((row) => row.id === editUserId) || null, [users, editUserId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +83,6 @@ export function SettingsPage() {
       }).catch(() => undefined);
       if (isAdmin) {
         api<SettingsUser[]>('/users').then(setUsers).catch(() => setUsers([]));
-        api<{ id: string; name: string }[]>('/warehouses').then(setWarehouses).catch(() => setWarehouses([]));
         api<{ periods: PeriodRow[]; log: PeriodLog[] }>('/settings/periods').then((res) => {
           setPeriods(res.periods);
           setPeriodLog(res.log);
@@ -76,6 +92,16 @@ export function SettingsPage() {
     })();
     return () => { cancelled = true; };
   }, [user?.role, isAdmin]);
+
+  // تحديث حالة الاتصال كل 20 ثانية أثناء فتح الإعدادات
+  useEffect(() => {
+    if (!isAdmin) return;
+    const refresh = () => {
+      api<SettingsUser[]>('/users').then(setUsers).catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 20_000);
+    return () => window.clearInterval(timer);
+  }, [isAdmin]);
 
   async function closePeriod(row: PeriodRow) {
     const ok = await confirm({
@@ -172,21 +198,25 @@ export function SettingsPage() {
       toast.error('أدخل اسم الدخول والاسم وكلمة السر');
       return;
     }
+    if (!userForm.pages.length) {
+      toast.error('اختَر شاشة واحدة على الأقل من الصلاحيات المسموحة');
+      return;
+    }
     setBusy('user');
     try {
-      const created = await api<{ id: string }>('/users', {
+      const permissions: AccessMap = accessFromPages(userForm.pages);
+      await api('/users', {
         method: 'POST',
         body: JSON.stringify({
-          username: userForm.username,
+          username: userForm.username.trim(),
           password: userForm.password,
-          fullName: userForm.fullName,
-          role: userForm.role,
+          fullName: userForm.fullName.trim(),
+          jobTitle: userForm.jobTitle.trim() || undefined,
+          role: 'SALES',
+          permissions,
         }),
       });
-      if (userForm.warehouseIds.length) {
-        await api(`/users/${created.id}/warehouses`, { method: 'PUT', body: JSON.stringify({ warehouseIds: userForm.warehouseIds }) });
-      }
-      setUserForm({ username: '', password: '', fullName: '', role: 'SALES', warehouseIds: [] });
+      setUserForm({ username: '', password: '', fullName: '', jobTitle: '', pages: [] });
       setUsers(await api('/users'));
       toast.success('تمت إضافة المستخدم');
     } catch (e) {
@@ -196,14 +226,71 @@ export function SettingsPage() {
     }
   }
 
-  async function saveUserWarehouses(userId: string) {
+  function openEditUser(row: SettingsUser) {
+    setEditUserId(row.id);
+    setEditForm({
+      username: row.username,
+      fullName: row.fullName,
+      jobTitle: row.jobTitle || '',
+      password: '',
+      pages: pageIdsFromPermissions(row.permissions, row.role),
+      isActive: row.isActive,
+    });
+  }
+
+  async function saveEditUser() {
+    if (!editingUser) return;
+    if (!editForm.username.trim()) {
+      toast.error('اسم الدخول مطلوب');
+      return;
+    }
+    if (!editForm.fullName.trim()) {
+      toast.error('الاسم مطلوب');
+      return;
+    }
+    if (editForm.password.trim() && editForm.password.trim().length < 4) {
+      toast.error('كلمة السر الجديدة لازم تكون 4 حروف على الأقل');
+      return;
+    }
+    if (editingUser.role !== 'ADMIN' && !editForm.pages.length) {
+      toast.error('اختَر شاشة واحدة على الأقل من الصلاحيات المسموحة');
+      return;
+    }
     setBusy('user');
     try {
-      await api(`/users/${userId}/warehouses`, { method: 'PUT', body: JSON.stringify({ warehouseIds: editWarehouseIds }) });
+      const body: Record<string, unknown> = {
+        username: editForm.username.trim(),
+        fullName: editForm.fullName.trim(),
+        jobTitle: editForm.jobTitle.trim(),
+        isActive: editForm.isActive,
+      };
+      if (editForm.password.trim()) body.password = editForm.password.trim();
+      if (editingUser.role !== 'ADMIN') body.permissions = accessFromPages(editForm.pages);
+      await api(`/users/${editingUser.id}`, { method: 'PATCH', body: JSON.stringify(body) });
       setUsers(await api('/users'));
-      toast.success('تم حفظ مخازن المستخدم');
+      setEditUserId(null);
+      toast.success(editForm.password.trim() ? 'تم حفظ البيانات وتغيير كلمة السر' : 'تم حفظ بيانات المستخدم');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'تعذر حفظ المخازن');
+      toast.error(e instanceof Error ? e.message : 'تعذر حفظ المستخدم');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function unlockUserLogin(row: SettingsUser) {
+    const ok = await confirm({
+      title: 'فك قفل الدخول',
+      message: `هتفتح محاولات الدخول لحساب «${row.fullName}» وتصفّر المحاولات الفاشلة.`,
+      confirmLabel: 'فك القفل',
+    });
+    if (!ok) return;
+    setBusy('user');
+    try {
+      await api(`/users/${row.id}`, { method: 'PATCH', body: JSON.stringify({ unlockLogin: true }) });
+      setUsers(await api('/users'));
+      toast.success('تم فك قفل الدخول');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذر فك القفل');
     } finally {
       setBusy('');
     }
@@ -353,115 +440,215 @@ export function SettingsPage() {
 
       {isAdmin && (
         <Card className="mt-4">
-          <CardHeader title="المستخدمين وصلاحية المخزن" subtitle={`${users.length} مستخدم`} icon={Users} />
+          <CardHeader title="المستخدمين والصلاحيات" subtitle={`${users.length} مستخدم`} icon={Users} />
           <form
             className="mb-5 rounded-xl border border-slate-200 bg-slate-50/60 p-4"
             onSubmit={(e) => { e.preventDefault(); addUser(); }}
           >
-            <div className="mb-3 flex items-center gap-2 text-[13px] font-bold text-slate-700"><UserPlus size={15} className="text-brand-600" /> مستخدم جديد</div>
+            <div className="mb-3 flex items-center gap-2 text-[13px] font-bold text-slate-700">
+              <UserPlus size={15} className="text-brand-600" /> مستخدم جديد
+            </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div><Label>اسم الدخول</Label><Input value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} dir="ltr" autoComplete="off" /></div>
-              <div><Label>الاسم</Label><Input value={userForm.fullName} onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })} /></div>
-              <div><Label>كلمة السر</Label><Input type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} autoComplete="new-password" /></div>
               <div>
-                <Label>الدور</Label>
-                <Select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
-                  <option value="ADMIN">مدير</option>
-                  <option value="ACCOUNTANT">حسابات</option>
-                  <option value="WAREHOUSE">مخزن</option>
-                  <option value="SALES">مبيعات</option>
-                </Select>
+                <Label>اسم الدخول</Label>
+                <Input value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} dir="ltr" autoComplete="off" />
+              </div>
+              <div>
+                <Label>الاسم</Label>
+                <Input value={userForm.fullName} onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })} />
+              </div>
+              <div>
+                <Label>المسمى الوظيفي</Label>
+                <Input
+                  value={userForm.jobTitle}
+                  onChange={(e) => setUserForm({ ...userForm, jobTitle: e.target.value })}
+                  placeholder="مثال: أمين مخزن"
+                />
+              </div>
+              <div>
+                <Label>كلمة السر</Label>
+                <Input type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} autoComplete="new-password" />
               </div>
             </div>
             <div className="mt-3">
-              <Label>المخازن المسموحة</Label>
-              <WarehouseMultiSelect
-                warehouses={warehouses}
-                value={userForm.warehouseIds}
-                onChange={(warehouseIds) => setUserForm({ ...userForm, warehouseIds })}
-                hint="من غير اختيار = يشوف كل المخازن. مع اختيار = يدخل على مخازنه فقط (فواتير وأصناف وعملاء)"
+              <ScreenPermissionsPicker
+                value={userForm.pages}
+                onChange={(pages) => setUserForm({ ...userForm, pages })}
               />
             </div>
-            <Button type="submit" className="mt-3" disabled={busy === 'user'}><UserPlus size={16} /> إضافة المستخدم</Button>
+            <Button type="submit" className="mt-3" disabled={busy === 'user'}>
+              <UserPlus size={16} /> إنشاء المستخدم
+            </Button>
           </form>
+
           {users.length === 0 ? <Empty text="لا يوجد مستخدمون" /> : (
             <Table>
-              <thead><tr><Th>المستخدم</Th><Th>اسم الدخول</Th><Th>الدور</Th><Th>المخازن</Th><Th>الحالة</Th><Th></Th></tr></thead>
+              <thead>
+                <tr>
+                  <Th>المستخدم</Th>
+                  <Th>المسمى الوظيفي</Th>
+                  <Th>اسم الدخول</Th>
+                  <Th>الاتصال</Th>
+                  <Th>الصلاحيات</Th>
+                  <Th>الحالة</Th>
+                  <Th></Th>
+                </tr>
+              </thead>
               <tbody>
-                {users.map((u) => {
-                  const links = u.warehouseLinks || [];
-                  const warehouseLabel = u.role === 'ADMIN' || !links.length
-                    ? 'كل المخازن'
-                    : links.map((link) => link.warehouse?.name || link.warehouseId).join(' · ');
-                  return (
+                {users.map((u) => (
                   <tr key={u.id}>
                     <Td>
                       <div className="flex items-center gap-2.5">
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-800 text-sm font-extrabold text-white">{u.fullName.slice(0, 1)}</span>
-                        <span className="font-bold text-slate-900">{u.fullName}</span>
+                        <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-800 text-sm font-extrabold text-white">
+                          {u.fullName.slice(0, 1)}
+                          <span
+                            className={`absolute -bottom-0.5 -start-0.5 h-3 w-3 rounded-full ring-2 ring-white ${u.online ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                            title={u.online ? 'متصل' : 'غير متصل'}
+                          />
+                        </span>
+                        <div>
+                          <div className="font-bold text-slate-900">{u.fullName}</div>
+                          {u.role === 'ADMIN' && (
+                            <Badge tone={ROLE_TONE.ADMIN}>{ROLE_LABELS.ADMIN}</Badge>
+                          )}
+                        </div>
                       </div>
                     </Td>
+                    <Td><span className="text-xs text-slate-600">{u.jobTitle || '—'}</span></Td>
                     <Td><span className="font-mono text-xs text-slate-600" dir="ltr">{u.username}</span></Td>
-                    <Td><Badge tone={ROLE_TONE[u.role] || 'slate'}>{ROLE_LABELS[u.role] || u.role}</Badge></Td>
-                    <Td><span className="text-xs text-slate-600">{warehouseLabel}</span></Td>
-                    <Td><Badge tone={u.isActive ? 'emerald' : 'rose'}>{u.isActive ? 'نشط' : 'موقوف'}</Badge></Td>
                     <Td>
-                      <div className="flex flex-wrap gap-1">
+                      {u.online ? (
+                        <div>
+                          <Badge tone="emerald">أونلاين</Badge>
+                          <div className="mt-1 text-[11px] text-emerald-700">متصل الآن</div>
+                        </div>
+                      ) : (
+                        <div>
+                          <Badge tone="slate">أوفلاين</Badge>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {u.lastAppearanceAt
+                              ? `آخر ظهور ${formatRelative(u.lastAppearanceAt)}`
+                              : 'لم يسجّل دخول بعد'}
+                          </div>
+                        </div>
+                      )}
+                    </Td>
+                    <Td><span className="text-xs text-slate-600">{pageLabels(u.permissions, u.role)}</span></Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge tone={u.isActive ? 'emerald' : 'rose'}>{u.isActive ? 'نشط' : 'موقوف'}</Badge>
+                        {u.loginLocked && <Badge tone="rose">دخول مقفول</Badge>}
+                      </div>
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-2">
+                        {u.loginLocked && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={busy === 'user'}
+                            onClick={() => unlockUserLogin(u)}
+                          >
+                            <Lock size={14} /> فك القفل
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           variant="secondary"
-                          onClick={() => {
-                            const open = warehousesUser !== u.id;
-                            setWarehousesUser(open ? u.id : null);
-                            setEditWarehouseIds(open ? (u.warehouseLinks || []).map((link) => link.warehouseId) : []);
-                          }}
+                          onClick={() => (editUserId === u.id ? setEditUserId(null) : openEditUser(u))}
                         >
-                          <Warehouse size={14} /> مخازن
+                          <Pencil size={14} /> تعديل
                         </Button>
-                        <Button type="button" variant="secondary" onClick={() => setAccessUser(accessUser === u.id ? null : u.id)}>صلاحيات</Button>
                       </div>
-                      {warehousesUser === u.id && u.role !== 'ADMIN' && (
-                        <div className="mt-3 max-w-xl rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                          <WarehouseMultiSelect
-                            warehouses={warehouses}
-                            value={editWarehouseIds}
-                            onChange={setEditWarehouseIds}
-                            hint="من غير اختيار = كل المخازن"
-                          />
-                          <Button type="button" className="mt-2" disabled={busy === 'user'} onClick={() => saveUserWarehouses(u.id)}>
-                            <Save size={14} /> حفظ المخازن
-                          </Button>
-                        </div>
-                      )}
-                      {accessUser === u.id && (
-                        <UserAccess
-                          role={u.role}
-                          value={u.permissions}
-                          busy={busy === 'user'}
-                          onSave={async (access: AccessMap) => {
-                            setBusy('user');
-                            try {
-                              await api(`/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ permissions: access }) });
-                              setUsers(await api('/users'));
-                              toast.success('تم حفظ الصلاحيات');
-                            } catch (error) {
-                              toast.error(error instanceof Error ? error.message : 'تعذر حفظ الصلاحيات');
-                            } finally {
-                              setBusy('');
-                            }
-                          }}
-                        />
-                      )}
                     </Td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </Table>
           )}
+
+          {editingUser && (
+            <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-[13px] font-bold text-slate-800">تعديل المستخدم</div>
+                <button type="button" className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => setEditUserId(null)}>
+                  إغلاق
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <Label>اسم الدخول</Label>
+                  <Input
+                    value={editForm.username}
+                    onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                    dir="ltr"
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <Label>الاسم</Label>
+                  <Input value={editForm.fullName} onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })} />
+                </div>
+                <div>
+                  <Label>المسمى الوظيفي</Label>
+                  <Input
+                    value={editForm.jobTitle}
+                    onChange={(e) => setEditForm({ ...editForm, jobTitle: e.target.value })}
+                    placeholder="مثال: أمين مخزن"
+                  />
+                </div>
+                <div>
+                  <Label>كلمة السر الجديدة</Label>
+                  <Input
+                    type="password"
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    placeholder="اتركها فارغة لو مش هتتغير"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[var(--color-brand-700)]"
+                      checked={editForm.isActive}
+                      onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
+                      disabled={editingUser.id === user?.id}
+                    />
+                    الحساب نشط
+                  </label>
+                </div>
+              </div>
+              {editingUser.loginLocked && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-800">
+                  <span>الدخول مقفول بعد محاولات فاشلة. المدير لازم يفك القفل قبل ما الحساب يقدر يدخل تاني.</span>
+                  <Button type="button" variant="secondary" disabled={busy === 'user'} onClick={() => unlockUserLogin(editingUser)}>
+                    <Lock size={14} /> فك قفل الدخول
+                  </Button>
+                </div>
+              )}
+              {editingUser.role === 'ADMIN' ? (
+                <p className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+                  حساب المدير عنده صلاحية على كل الشاشات تلقائياً.
+                </p>
+              ) : (
+                <div className="mt-3">
+                  <ScreenPermissionsPicker
+                    value={editForm.pages}
+                    onChange={(pages) => setEditForm({ ...editForm, pages })}
+                  />
+                </div>
+              )}
+              <Button type="button" className="mt-3" disabled={busy === 'user'} onClick={saveEditUser}>
+                <Save size={16} /> حفظ التعديلات
+              </Button>
+            </div>
+          )}
+
           <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
             <ShieldCheck size={14} className="mt-0.5 shrink-0" />
-            ربط المستخدم بمخزن يقيّد الفواتير والأصناف والمخزون والعملاء والموردين. صلاحيات الصفحات منفصلة من زر الصلاحيات.
+            اختَر الشاشات المسموحة للمستخدم. أي شاشة مش متعلّمة هتبقى مقفولة. بعد الدخول هيفتح على أول شاشة مسموحة عنده (ولوحة التحكم لو كانت من ضمن صلاحياته). تقدر تعدّل الاسم واسم الدخول وكلمة السر والصلاحيات من زر تعديل.
           </p>
         </Card>
       )}

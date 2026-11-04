@@ -49,6 +49,17 @@ export const ROLE_LABELS: Record<string, string> = {
   SALES: 'مبيعات',
 };
 
+/** الأدمن: مدير النظام. باقي الحسابات: المسمى الوظيفي، ولو فاضي من غير نص افتراضي للدور. */
+export function displayJobLabel(user?: {
+  role?: string;
+  jobTitle?: string | null;
+} | null): string {
+  if (!user) return '';
+  if (user.role === 'ADMIN') return ROLE_LABELS.ADMIN;
+  const title = user.jobTitle?.trim();
+  return title || 'بدون مسمى وظيفي';
+}
+
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'نظرة عامة',
@@ -112,6 +123,17 @@ export function canAccess(role: string | undefined, roles?: AppRole[]) {
   if (!roles?.length) return true;
   if (role === 'ADMIN') return true;
   return !!role && roles.includes(role as AppRole);
+}
+
+/** أول مسار مسموح بعد الدخول: لوحة التحكم إن وُجدت صلاحيتها، وإلا أول شاشة مفعّلة. */
+export function getHomePath(user: {
+  role?: string;
+  access?: Record<string, { view?: boolean } | undefined>;
+} | null | undefined): string {
+  if (!user) return '/';
+  if (!user.access || user.role === 'ADMIN' || user.access.dashboard?.view) return '/';
+  const first = NAV_ITEMS.find((item) => user.access?.[item.page]?.view);
+  return first?.to || '/';
 }
 
 export const QUICK_ACTIONS: { to: string; label: string; page: string; roles?: AppRole[] }[] = [

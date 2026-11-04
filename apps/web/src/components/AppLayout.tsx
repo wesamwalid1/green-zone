@@ -4,7 +4,7 @@ import { Bell, ChevronLeft, LogOut, Menu, Moon, Search, Sun, X, Zap } from 'luci
 import { api, formatRelative } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
-import { NAV_GROUPS, NAV_ITEMS, QUICK_ACTIONS, ROLE_LABELS, canAccess } from '../lib/nav';
+import { NAV_GROUPS, NAV_ITEMS, QUICK_ACTIONS, canAccess, displayJobLabel } from '../lib/nav';
 import { pushRecent } from '../lib/prefs';
 import { CommandPalette } from './CommandPalette';
 import { PageSkeleton } from './ui';
@@ -168,7 +168,7 @@ export function AppLayout() {
               <div className="truncate text-xs font-bold">{user?.fullName}</div>
               <div className="flex items-center gap-1.5 text-[11px] text-brand-200">
                 <span className="live-dot h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                متصل · {ROLE_LABELS[user?.role || ''] || user?.role}
+                متصل · {displayJobLabel(user)}
               </div>
             </div>
           </div>
@@ -250,7 +250,7 @@ export function AppLayout() {
                 <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-700 text-xs font-bold text-white">{initials(user?.fullName || 'م')}</span>
                 <span className="hidden text-right sm:block">
                   <span className="block text-sm font-semibold leading-4 text-slate-800">{user?.fullName}</span>
-                  <span className="text-[11px] text-muted">{ROLE_LABELS[user?.role || ''] || user?.role}</span>
+                  <span className="text-[11px] text-muted">{displayJobLabel(user)}</span>
                 </span>
               </button>
               {userOpen && (

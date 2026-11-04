@@ -80,11 +80,13 @@ export async function api<T>(
   });
 
   if (res.status === 401) {
+    const err = await res.json().catch(() => ({ message: 'غير مصرح' }));
+    const msg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
     localStorage.removeItem('m5azen_token');
     if (!window.location.pathname.includes('/login')) {
       window.location.href = '/login';
     }
-    throw new Error('غير مصرح');
+    throw new Error(msg || 'غير مصرح');
   }
 
   if (!res.ok) {

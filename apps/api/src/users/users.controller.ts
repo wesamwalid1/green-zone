@@ -9,7 +9,9 @@ class CreateUserDto {
   @IsString() username!: string;
   @IsString() @MinLength(4) password!: string;
   @IsString() fullName!: string;
-  @IsEnum(Role) role!: Role;
+  @IsOptional() @IsString() jobTitle?: string;
+  @IsOptional() @IsEnum(Role) role?: Role;
+  @IsOptional() @IsObject() permissions?: Record<string, unknown>;
 }
 
 class ChangePasswordDto {
@@ -18,9 +20,12 @@ class ChangePasswordDto {
 }
 
 class UpdateUserDto {
+  @IsOptional() @IsString() @MinLength(2) username?: string;
   @IsOptional() @IsString() fullName?: string;
+  @IsOptional() @IsString() jobTitle?: string;
   @IsOptional() @IsEnum(Role) role?: Role;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsBoolean() unlockLogin?: boolean;
   @IsOptional() @IsString() @MinLength(4) password?: string;
   @IsOptional() @IsObject() permissions?: Record<string, unknown>;
 }

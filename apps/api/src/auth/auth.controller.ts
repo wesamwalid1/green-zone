@@ -28,4 +28,9 @@ export class AuthController {
   me(@Req() req: { user: { userId: string } }) {
     return this.auth.me(req.user.userId);
   }
+
+  @Post('heartbeat')
+  heartbeat(@Req() req: { user: { userId: string } }) {
+    return this.auth.heartbeat(req.user.userId);
+  }
 }

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { getApiBase, setApiBase } from '../lib/api';
+import { getHomePath } from '../lib/nav';
 
 const REMEMBER_KEY = 'm5azen.rememberUser';
 
@@ -28,7 +29,7 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={getHomePath(user)} replace />;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

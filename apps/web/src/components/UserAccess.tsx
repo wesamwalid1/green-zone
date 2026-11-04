@@ -1,14 +1,95 @@
 import { useMemo, useState } from 'react';
-import { PAGES, templateFor, normalizeAccess, type AccessMap, type PageId } from '@m5azen/shared';
+import {
+  PAGES,
+  accessFromPages,
+  normalizeAccess,
+  parseAccess,
+  type AccessMap,
+  type PageId,
+} from '@m5azen/shared';
 import { Button } from './ui';
 
-const PRESETS = [
-  { id: 'ADMIN', label: 'كل الصلاحيات' },
-  { id: 'ACCOUNTANT', label: 'محاسب' },
-  { id: 'SALES', label: 'مبيعات' },
-  { id: 'WAREHOUSE', label: 'مخزن' },
-];
+function pagesFromAccess(access: AccessMap): PageId[] {
+  return PAGES.filter((page) => access[page.id]?.view).map((page) => page.id);
+}
 
+export function ScreenPermissionsPicker({
+  value,
+  onChange,
+}: {
+  value: PageId[];
+  onChange: (pages: PageId[]) => void;
+}) {
+  const groups = useMemo(() => [...new Set(PAGES.map((page) => page.group))], []);
+  const selected = new Set(value);
+
+  function toggle(page: PageId) {
+    if (selected.has(page)) onChange(value.filter((id) => id !== page));
+    else onChange([...value, page]);
+  }
+
+  function selectAll() {
+    onChange(PAGES.map((page) => page.id));
+  }
+
+  function clearAll() {
+    onChange([]);
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[13px] font-bold text-slate-700">
+          الصلاحيات المسموحة
+          <span className="ms-2 font-medium text-slate-500">({value.length} من {PAGES.length})</span>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" className="text-xs font-bold text-brand-700 hover:underline" onClick={selectAll}>
+            تحديد الكل
+          </button>
+          <button type="button" className="text-xs font-bold text-slate-500 hover:underline" onClick={clearAll}>
+            إلغاء الكل
+          </button>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {groups.map((group) => (
+          <div key={group}>
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{group}</div>
+            <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+              {PAGES.filter((page) => page.group === group).map((page) => {
+                const checked = selected.has(page.id);
+                return (
+                  <label
+                    key={page.id}
+                    className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition ${
+                      checked
+                        ? 'border-brand-300 bg-brand-50 font-bold text-brand-900'
+                        : 'border-slate-100 bg-slate-50/60 font-medium text-slate-700 hover:border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[var(--color-brand-700)]"
+                      checked={checked}
+                      onChange={() => toggle(page.id)}
+                    />
+                    {page.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-muted">
+        الشاشات غير المحددة هتبقى مقفولة للمستخدم، وهيظهر له رسالة إنه مفيش صلاحية على الجزء ده.
+      </p>
+    </div>
+  );
+}
+
+/** Edit existing user permissions (used from the users table). */
 export function UserAccess({
   role,
   value,
@@ -20,95 +101,20 @@ export function UserAccess({
   onSave: (access: AccessMap) => Promise<void>;
   busy?: boolean;
 }) {
-  const initial = useMemo(() => (value ? normalizeAccess(JSON.parse(value), role) : templateFor(role)), [role, value]);
-  const [access, setAccess] = useState<AccessMap>(initial);
-  const [open, setOpen] = useState<PageId | null>('sales');
-  const groups = [...new Set(PAGES.map((page) => page.group))];
-
-  function setView(page: PageId, view: boolean) {
-    setAccess((current) => {
-      const def = PAGES.find((item) => item.id === page)!;
-      return {
-        ...current,
-        [page]: view
-          ? { view: true, actions: def.actions.map((action) => action.id), fields: def.fields.map((field) => field.id) }
-          : { view: false, actions: [], fields: [] },
-      };
-    });
-  }
-
-  function toggle(page: PageId, kind: 'actions' | 'fields', id: string) {
-    setAccess((current) => {
-      const grant = current[page];
-      const list = grant[kind].includes(id) ? grant[kind].filter((item) => item !== id) : [...grant[kind], id];
-      return { ...current, [page]: { ...grant, [kind]: list } };
-    });
-  }
+  const initialPages = useMemo(
+    () => pagesFromAccess(value ? normalizeAccess(JSON.parse(value), role) : parseAccess(null, role)),
+    [role, value],
+  );
+  const [pages, setPages] = useState<PageId[]>(initialPages);
 
   return (
-    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-      <div className="mb-3 flex flex-wrap gap-2">
-        {PRESETS.map((preset) => (
-          <Button key={preset.id} type="button" variant="secondary" onClick={() => setAccess(templateFor(preset.id))}>{preset.label}</Button>
-        ))}
-      </div>
-      <div className="space-y-3">
-        {groups.map((group) => (
-          <div key={group}>
-            <div className="mb-1 text-xs font-bold text-slate-500">{group}</div>
-            <div className="space-y-1">
-              {PAGES.filter((page) => page.group === group).map((page) => {
-                const grant = access[page.id];
-                const expanded = open === page.id && grant.view;
-                return (
-                  <div key={page.id} className="rounded-lg border border-slate-100">
-                    <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2">
-                      <span className="font-semibold text-slate-800">{page.label}</span>
-                      <input type="checkbox" checked={grant.view} onChange={(event) => { setView(page.id, event.target.checked); setOpen(page.id); }} />
-                    </label>
-                    {grant.view && (page.actions.length > 0 || page.fields.length > 0) && (
-                      <button type="button" className="px-3 pb-2 text-xs font-bold text-brand-700" onClick={() => setOpen(expanded ? null : page.id)}>
-                        {expanded ? 'إخفاء التفاصيل' : 'يعمل إيه ويشوف إيه'}
-                      </button>
-                    )}
-                    {expanded && (
-                      <div className="grid gap-3 border-t border-slate-100 px-3 py-2 sm:grid-cols-2">
-                        {page.actions.length > 0 && (
-                          <div>
-                            <div className="mb-1 text-xs font-bold text-slate-500">يعمل</div>
-                            <div className="flex flex-wrap gap-2">
-                              {page.actions.map((action) => (
-                                <label key={action.id} className="flex items-center gap-1 text-sm">
-                                  <input type="checkbox" checked={grant.actions.includes(action.id)} onChange={() => toggle(page.id, 'actions', action.id)} />
-                                  {action.label}
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {page.fields.length > 0 && (
-                          <div>
-                            <div className="mb-1 text-xs font-bold text-slate-500">يشوف</div>
-                            <div className="flex flex-wrap gap-2">
-                              {page.fields.map((field) => (
-                                <label key={field.id} className="flex items-center gap-1 text-sm">
-                                  <input type="checkbox" checked={grant.fields.includes(field.id)} onChange={() => toggle(page.id, 'fields', field.id)} />
-                                  {field.label}
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-      <Button type="button" className="mt-3" disabled={busy} onClick={() => onSave(access)}>حفظ الصلاحيات</Button>
+    <div className="mt-3 space-y-3">
+      <ScreenPermissionsPicker value={pages} onChange={setPages} />
+      <Button type="button" disabled={busy} onClick={() => onSave(accessFromPages(pages))}>
+        حفظ الصلاحيات
+      </Button>
     </div>
   );
 }
+
+export { accessFromPages, pagesFromAccess };

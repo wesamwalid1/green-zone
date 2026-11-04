@@ -13,6 +13,8 @@ export type PageId =
   | 'cash'
   | 'finance'
   | 'hr'
+  | 'partners'
+  | 'statements'
   | 'reports'
   | 'reportBuilder'
   | 'analytics'
@@ -223,6 +225,34 @@ export const PAGES: PageDef[] = [
     ],
   },
   {
+    id: 'partners',
+    label: 'الشركاء',
+    group: 'المالية',
+    actions: [
+      { id: 'create', label: 'إضافة' },
+      { id: 'edit', label: 'تعديل' },
+      { id: 'delete', label: 'حذف' },
+      { id: 'withdraw', label: 'سحب' },
+    ],
+    fields: [
+      { id: 'share', label: 'نسبة الأرباح' },
+      { id: 'amounts', label: 'المبالغ' },
+    ],
+  },
+  {
+    id: 'statements',
+    label: 'كشوف حسابات',
+    group: 'المالية',
+    actions: [
+      { id: 'export', label: 'تصدير' },
+      { id: 'advance', label: 'دفع مقدم' },
+    ],
+    fields: [
+      { id: 'amounts', label: 'المبالغ' },
+      { id: 'balance', label: 'الرصيد' },
+    ],
+  },
+  {
     id: 'reports',
     label: 'التقارير',
     group: 'المالية',
@@ -353,6 +383,8 @@ export function templateFor(role: string): AccessMap {
       cash: grant(true, ['receipt'], []),
       finance: off,
       hr: off,
+      partners: off,
+      statements: off,
       reports: off,
       reportBuilder: off,
       analytics: off,
@@ -377,6 +409,8 @@ export function templateFor(role: string): AccessMap {
     cash: off,
     finance: off,
     hr: off,
+    partners: off,
+    statements: off,
     reports: off,
     reportBuilder: off,
     analytics: off,
@@ -386,15 +420,33 @@ export function templateFor(role: string): AccessMap {
   };
 }
 
+/** Build access from an explicit list of allowed screens (full actions/fields per screen). */
+export function accessFromPages(pageIds: PageId[]): AccessMap {
+  const allowed = new Set(pageIds);
+  const map = {} as AccessMap;
+  for (const page of PAGES) {
+    if (!allowed.has(page.id)) {
+      map[page.id] = emptyGrant();
+      continue;
+    }
+    map[page.id] = {
+      view: true,
+      actions: page.actions.map((action) => action.id),
+      fields: page.fields.map((field) => field.id),
+    };
+  }
+  return map;
+}
+
 export function normalizeAccess(raw: unknown, role: string): AccessMap {
-  const base = templateFor(role);
-  if (!raw || typeof raw !== 'object') return base;
+  if (!raw || typeof raw !== 'object') return templateFor(role);
   const source = raw as Record<string, Partial<PageGrant>>;
   const map = {} as AccessMap;
   for (const page of PAGES) {
     const item = source[page.id];
     if (!item || typeof item !== 'object') {
-      map[page.id] = base[page.id];
+      // Explicit map from admin: missing page = no access (not role default)
+      map[page.id] = emptyGrant();
       continue;
     }
     const view = !!item.view;
