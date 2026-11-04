@@ -40,6 +40,7 @@ type StockItem = {
     fieldValues: FieldValue[];
   };
   warehouse: { id: string; name: string };
+  section?: { id: string; code: string; name: string } | null;
   batches: Batch[];
 };
 
@@ -280,7 +281,7 @@ export function StockPage() {
               setExpiryRows(await api('/stock/expiry?days=30'));
               setExpiryOpen(true);
             }}>صلاحية</Button>
-            <Button variant="secondary" onClick={() => setLocOpen(true)}>مواقع المخزن</Button>
+            <Button variant="secondary" onClick={() => setLocOpen(true)}>تحديد جزء البضاعة</Button>
             <Button onClick={() => setTransferOpen(true)}>
               <ArrowLeftRight size={16} /> تحويل
             </Button>
@@ -336,6 +337,7 @@ export function StockPage() {
               <thead>
                 <tr>
                   <Th>المخزن</Th>
+                  <Th>الجزء</Th>
                   <Th>الكود</Th>
                   <Th>الصنف</Th>
                   <Th>الكمية</Th>
@@ -349,6 +351,15 @@ export function StockPage() {
                 {visibleItems.map((b) => (
                   <tr key={b.id} className={b.quantity <= 0 ? 'row-credit' : ''}>
                     <Td className="text-slate-600">{b.warehouse.name}</Td>
+                    <Td>
+                      {b.section ? (
+                        <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800 ring-1 ring-inset ring-emerald-200">
+                          {b.section.name}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted">غير محدد</span>
+                      )}
+                    </Td>
                     <Td><span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold text-slate-700" dir="ltr">{b.product.sku}</span></Td>
                     <Td className="font-bold text-slate-900">{b.product.name}</Td>
                     <Td>
@@ -629,29 +640,25 @@ export function StockPage() {
         )}
       </Modal>
 
-      <Modal open={locOpen} onClose={() => setLocOpen(false)} title="مواقع داخل المخزن">
+      <Modal open={locOpen} onClose={() => setLocOpen(false)} title="تحديد جزء البضاعة داخل المخزن">
         <div className="space-y-3">
+          <p className="text-sm leading-6 text-muted">
+            الأجزاء بتتتضبط من شاشة المخازن. هنا تربط الصنف بالجزء عشان تلاقيه بسهولة وقت الصرف.
+          </p>
           <div>
             <Label>المخزن</Label>
             <Select value={locForm.warehouseId} onChange={async (e) => {
               const warehouseId = e.target.value;
-              setLocForm({ ...locForm, warehouseId });
+              setLocForm({ ...locForm, warehouseId, locationId: '' });
               if (warehouseId) setLocations(await api(`/stock/locations?warehouseId=${warehouseId}`));
+              else setLocations([]);
             }}>
               <option value="">اختر</option>
               {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="كود الموقع" value={locForm.code} onChange={(e) => setLocForm({ ...locForm, code: e.target.value })} />
-            <Input placeholder="اسم الرف" value={locForm.name} onChange={(e) => setLocForm({ ...locForm, name: e.target.value })} />
-          </div>
-          <Button variant="secondary" onClick={async () => {
-            await api('/stock/locations', { method: 'POST', body: JSON.stringify({ warehouseId: locForm.warehouseId, code: locForm.code, name: locForm.name }) });
-            setLocations(await api(`/stock/locations?warehouseId=${locForm.warehouseId}`));
-          }}>إضافة موقع</Button>
           <div>
-            <Label>ربط صنف بموقع</Label>
+            <Label>الصنف</Label>
             <ProductPicker
               products={productsForWarehouse(products, locForm.warehouseId, [locForm.productId]).map((product) => ({
                 id: product.id,
@@ -664,18 +671,55 @@ export function StockPage() {
               placeholder={locForm.warehouseId ? 'اكتب اسم الصنف' : 'اختر المخزن أولاً'}
               onChange={(productId) => setLocForm({ ...locForm, productId })}
             />
-            <Select className="mt-2" value={locForm.locationId} onChange={(e) => setLocForm({ ...locForm, locationId: e.target.value })}>
-              <option value="">الموقع</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}
+          </div>
+          <div>
+            <Label>الجزء داخل المخزن</Label>
+            <Select value={locForm.locationId} onChange={(e) => setLocForm({ ...locForm, locationId: e.target.value })}>
+              <option value="">{locations.length ? 'اختر الجزء' : 'لا يوجد أجزاء — أضفها من شاشة المخازن'}</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </Select>
           </div>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+            <div className="mb-2 text-xs font-bold text-slate-600">إضافة جزء جديد لهذا المخزن</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input placeholder="اسم الجزء" value={locForm.name} onChange={(e) => setLocForm({ ...locForm, name: e.target.value })} />
+              <Button variant="secondary" onClick={async () => {
+                if (!locForm.warehouseId || !locForm.name.trim()) {
+                  toast.error('اختَر المخزن واكتب اسم الجزء');
+                  return;
+                }
+                try {
+                  const created = await api<{ id: string }>('/stock/locations', {
+                    method: 'POST',
+                    body: JSON.stringify({ warehouseId: locForm.warehouseId, name: locForm.name.trim() }),
+                  });
+                  const rows = await api<{ id: string; code: string; name: string }[]>(`/stock/locations?warehouseId=${locForm.warehouseId}`);
+                  setLocations(rows);
+                  setLocForm({ ...locForm, name: '', locationId: created.id });
+                  toast.success('تمت إضافة الجزء');
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'تعذر إضافة الجزء');
+                }
+              }}>إضافة</Button>
+            </div>
+          </div>
           <Button className="w-full" onClick={async () => {
-            await api('/stock/product-locations', {
-              method: 'POST',
-              body: JSON.stringify({ productId: locForm.productId, warehouseId: locForm.warehouseId, locationId: locForm.locationId }),
-            });
-            setLocOpen(false);
-          }}>حفظ الربط</Button>
+            if (!locForm.warehouseId || !locForm.productId || !locForm.locationId) {
+              toast.error('اختَر المخزن والصنف والجزء');
+              return;
+            }
+            try {
+              await api('/stock/product-locations', {
+                method: 'POST',
+                body: JSON.stringify({ productId: locForm.productId, warehouseId: locForm.warehouseId, locationId: locForm.locationId }),
+              });
+              toast.success('تم تحديد جزء البضاعة');
+              setLocOpen(false);
+              load();
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'تعذر حفظ الربط');
+            }
+          }}>حفظ تحديد الجزء</Button>
         </div>
       </Modal>
 

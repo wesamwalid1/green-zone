@@ -9,10 +9,12 @@ import { useConfirm, useToast } from '../lib/feedback';
 import { usePagedList } from '../lib/paging';
 import { FilterOption, IconAction, ListBar } from '../components/ListBar';
 import {
-  Badge, Button, Card, Empty, Field, Input, Modal, PageHeader, Pager, Select, StatCard, StatGrid, Table, Td, Th,
+  Badge, Button, Card, Empty, Field, Input, Modal, NumberInput, PageHeader, Pager, Select, StatCard, StatGrid, Table, Td, Th,
 } from '../components/ui';
 
 type WarehouseKind = 'GENERAL' | 'RAW' | 'MANUFACTURING';
+
+type WarehouseSection = { id?: string; code?: string; name: string };
 
 type Warehouse = {
   id: string;
@@ -24,6 +26,8 @@ type Warehouse = {
   isActive: boolean;
   itemCount?: number;
   quantity?: number;
+  sectionCount?: number;
+  sections?: WarehouseSection[];
 };
 
 type FormState = {
@@ -33,6 +37,8 @@ type FormState = {
   location: string;
   description: string;
   isActive: boolean;
+  sectionCount: number | '';
+  sections: WarehouseSection[];
 };
 
 const KIND_LABELS: Record<WarehouseKind, string> = {
@@ -41,8 +47,30 @@ const KIND_LABELS: Record<WarehouseKind, string> = {
   MANUFACTURING: 'تصنيع',
 };
 
-const emptyForm: FormState = { code: '', name: '', kind: 'GENERAL', location: '', description: '', isActive: true };
+const emptyForm: FormState = {
+  code: '',
+  name: '',
+  kind: 'GENERAL',
+  location: '',
+  description: '',
+  isActive: true,
+  sectionCount: '',
+  sections: [],
+};
 const VIEW_KEY = 'm5azen.warehousesView';
+const MAX_WAREHOUSES = 3;
+const MAX_SECTIONS = 20;
+const WAREHOUSE_LIMIT_MESSAGE =
+  'النسخة الحالية تدعم حتى 3 مخازن فقط. لإضافة مخزن إضافي، يُرجى التواصل معنا لتفعيل التوسعة.';
+
+function resizeSections(count: number, current: WarehouseSection[]): WarehouseSection[] {
+  const nextCount = Math.max(0, Math.min(MAX_SECTIONS, count));
+  const next = current.slice(0, nextCount).map((row) => ({ ...row }));
+  while (next.length < nextCount) {
+    next.push({ name: `جزء ${next.length + 1}` });
+  }
+  return next;
+}
 
 function issues(form: FormState, items: Warehouse[], currentId?: string) {
   const errors: Partial<Record<'code' | 'name', string>> = {};
@@ -107,13 +135,24 @@ export function WarehousesPage() {
     navigate(`/stock?warehouse=${encodeURIComponent(row.id)}`);
   }
 
+  const atWarehouseLimit = items.length >= MAX_WAREHOUSES;
+
   function openCreate() {
+    if (atWarehouseLimit) {
+      toast.error(WAREHOUSE_LIMIT_MESSAGE);
+      return;
+    }
     setEditingId(null);
     setForm(emptyForm);
     setOpen(true);
   }
 
   function openEdit(row: Warehouse) {
+    const sections = (row.sections || []).map((section) => ({
+      id: section.id,
+      code: section.code,
+      name: section.name,
+    }));
     setEditingId(row.id);
     setForm({
       code: row.code,
@@ -122,12 +161,22 @@ export function WarehousesPage() {
       location: row.location || '',
       description: row.description || '',
       isActive: row.isActive,
+      sectionCount: sections.length || '',
+      sections,
     });
     setOpen(true);
   }
 
   async function save() {
     if (Object.keys(formErrors).length) return;
+    const sectionCount = form.sectionCount === '' ? 0 : Number(form.sectionCount);
+    if (sectionCount > 0) {
+      const empty = form.sections.slice(0, sectionCount).find((section) => !section.name.trim());
+      if (empty) {
+        toast.error('سمِّ كل أجزاء المخزن قبل الحفظ');
+        return;
+      }
+    }
     setSaving(true);
     try {
       const body = {
@@ -136,6 +185,13 @@ export function WarehousesPage() {
         kind: form.kind,
         location: form.location.trim(),
         description: form.description.trim(),
+        sections: form.sections
+          .slice(0, sectionCount)
+          .map((section, index) => ({
+            id: section.id,
+            code: section.code || `P${index + 1}`,
+            name: section.name.trim(),
+          })),
         ...(editingId ? { isActive: form.isActive } : {}),
       };
       await api(editingId ? `/warehouses/${editingId}` : '/warehouses', {
@@ -189,9 +245,21 @@ export function WarehousesPage() {
     <div>
       <PageHeader
         title="المخازن"
-        subtitle="أماكن التخزين — الرصيد يتوزع حسب المخزن، الأصناف مشتركة"
-        actions={<Button onClick={openCreate}><Plus size={16} /> مخزن جديد</Button>}
+        subtitle={`أماكن التخزين — حتى ${MAX_WAREHOUSES} مخازن في النسخة الحالية (${items.length}/${MAX_WAREHOUSES})`}
+        actions={
+          atWarehouseLimit ? (
+            <Button type="button" variant="secondary" onClick={openCreate}>تم الوصول لحد 3 مخازن</Button>
+          ) : (
+            <Button onClick={openCreate}><Plus size={16} /> مخزن جديد</Button>
+          )
+        }
       />
+
+      {atWarehouseLimit && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+          وصلت للحد الأقصى ({MAX_WAREHOUSES} مخازن). لو محتاج مخزن إضافي، تواصل معنا عشان نفعّل التوسعة.
+        </div>
+      )}
 
       <StatGrid>
         <StatCard label="إجمالي المخازن" value={items.length} hint="كل الفروع ونقاط التخزين" icon={Warehouse} tone="brand" active={status === 'all' && !stockedOnly} onClick={() => { setStatus('all'); setStockedOnly(false); }} />
@@ -245,7 +313,12 @@ export function WarehousesPage() {
                     </div>
                     <Badge tone={row.isActive ? 'emerald' : 'slate'}>{row.isActive ? 'نشط' : 'متوقف'}</Badge>
                   </div>
-                  <div className="mt-3 flex items-center gap-1.5 text-sm text-muted"><MapPin size={13} />{row.location || 'بدون موقع'}</div>
+                  <div className="mt-3 flex items-center gap-1.5 text-sm text-muted"><MapPin size={13} />{row.location || 'بدون عنوان'}</div>
+                  <div className="mt-1 text-xs font-semibold text-brand-700">
+                    {(row.sectionCount || row.sections?.length || 0) > 0
+                      ? `مقسوم لـ ${row.sectionCount || row.sections?.length} أجزاء`
+                      : 'بدون تقسيم داخلي'}
+                  </div>
                   {row.description && <p className="mt-1 line-clamp-2 text-sm text-slate-600">{row.description}</p>}
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full rounded-full bg-gradient-to-l from-sky-400 to-brand-600" style={{ width: `${Math.max(3, ((row.quantity || 0) / maxQty) * 100)}%` }} />
@@ -343,12 +416,52 @@ export function WarehousesPage() {
               <option value="MANUFACTURING">تصنيع</option>
             </Select>
           </Field>
-          <Field label="الموقع" icon={<MapPin size={16} />} hint="المدينة أو العنوان داخل الشركة">
+          <Field label="العنوان / الموقع الجغرافي" icon={<MapPin size={16} />} hint="المدينة أو العنوان داخل الشركة">
             <Input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} />
           </Field>
           <Field label="الوصف">
             <Input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
           </Field>
+          <Field
+            label="تقسيم المخزن لأجزاء (اختياري)"
+            hint="اكتب رقم زي 3. لو سيبته فاضي مفيش أجزاء"
+          >
+            <NumberInput
+              value={form.sectionCount}
+              min={0}
+              max={MAX_SECTIONS}
+              placeholder="مثال: 3"
+              onValueChange={(value) => {
+                const sectionCount = value === '' ? '' : Math.max(0, Math.min(MAX_SECTIONS, Math.floor(Number(value) || 0)));
+                const count = sectionCount === '' ? 0 : sectionCount;
+                setForm({
+                  ...form,
+                  sectionCount,
+                  sections: resizeSections(count, form.sections),
+                });
+              }}
+            />
+          </Field>
+          {(form.sectionCount === '' ? 0 : Number(form.sectionCount)) > 0 && (
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <div className="text-xs font-bold text-slate-600">أسماء الأجزاء</div>
+              {form.sections.slice(0, Number(form.sectionCount) || 0).map((section, index) => (
+                <div key={section.id || index} className="grid grid-cols-[auto_1fr] items-center gap-2">
+                  <span className="text-xs font-bold text-muted">جزء {index + 1}</span>
+                  <Input
+                    value={section.name}
+                    onChange={(event) => {
+                      const sections = form.sections.map((row, rowIndex) =>
+                        rowIndex === index ? { ...row, name: event.target.value } : row,
+                      );
+                      setForm({ ...form, sections });
+                    }}
+                    placeholder={`اسم الجزء ${index + 1}`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           {editingId && (
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
               <input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />

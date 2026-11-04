@@ -1,8 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
-import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsEnum, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Role, WarehouseKind } from '@prisma/client';
 import { WarehousesService } from './warehouses.service';
 import { Roles } from '../common/guards';
+
+class WarehouseSectionDto {
+  @IsOptional() @IsString() id?: string;
+  @IsOptional() @IsString() code?: string;
+  @IsString() name!: string;
+}
 
 class WarehouseDto {
   @IsOptional() @IsString() code?: string;
@@ -10,6 +17,8 @@ class WarehouseDto {
   @IsOptional() @IsEnum(WarehouseKind) kind?: WarehouseKind;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => WarehouseSectionDto)
+  sections?: WarehouseSectionDto[];
 }
 
 class UpdateWarehouseDto {
@@ -19,6 +28,8 @@ class UpdateWarehouseDto {
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => WarehouseSectionDto)
+  sections?: WarehouseSectionDto[];
 }
 
 @Controller('warehouses')

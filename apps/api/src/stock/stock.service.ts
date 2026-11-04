@@ -101,10 +101,24 @@ export class StockService {
       batchesByKey.set(key, list);
     }
 
+    const locationRows = productIds.length
+      ? await this.prisma.productLocation.findMany({
+          where: {
+            productId: { in: productIds },
+            ...(warehouseId ? { warehouseId } : warehouseIds?.length ? { warehouseId: { in: warehouseIds } } : {}),
+          },
+          include: { location: true },
+        })
+      : [];
+    const locationByKey = new Map(
+      locationRows.map((row) => [`${row.productId}:${row.warehouseId}`, row.location] as const),
+    );
+
     const items = balances.map((b) => {
       const unitCost = b.product.costPrice || 0;
       const totalCost = Math.round(b.quantity * unitCost * 100) / 100;
       const rawBatches = batchesByKey.get(`${b.productId}:${b.warehouseId}`) || [];
+      const section = locationByKey.get(`${b.productId}:${b.warehouseId}`) || null;
 
       return {
         id: b.id,
@@ -115,6 +129,7 @@ export class StockService {
         totalCost,
         product: b.product,
         warehouse: b.warehouse,
+        section: section ? { id: section.id, code: section.code, name: section.name } : null,
         batches: rawBatches.map((l) => ({
           id: l.id,
           invoiceId: l.invoiceId,
@@ -563,8 +578,13 @@ export class StockService {
     });
   }
 
-  createLocation(data: { warehouseId: string; code: string; name: string }) {
-    return this.prisma.warehouseLocation.create({ data });
+  createLocation(data: { warehouseId: string; code?: string; name: string }) {
+    const name = data.name.trim();
+    if (!name) throw new BadRequestException('اسم الجزء مطلوب');
+    const code = (data.code || '').trim() || `P${Date.now().toString(36).toUpperCase()}`;
+    return this.prisma.warehouseLocation.create({
+      data: { warehouseId: data.warehouseId, code, name },
+    });
   }
 
   async removeLocation(id: string) {
