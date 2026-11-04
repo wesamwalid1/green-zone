@@ -124,6 +124,9 @@ model User {
   hrEmployee       HrEmployee?
   orgNodeId        String?
   orgNode          OrgNode?          @relation(fields: [orgNodeId], references: [id], onDelete: SetNull)
+  engineerProdOrders CustomerProdOrder[] @relation("ProdOrderEngineer")
+  createdProdOrders  CustomerProdOrder[] @relation("ProdOrderCreatedBy")
+  createdWorkOrders  WorkOrder[]         @relation("WorkOrderCreatedBy")
 }
 
 model Warehouse {
@@ -221,7 +224,7 @@ model Product {
   mfgFinishedJobs     MfgJob[]             @relation("MfgFinishedProduct")
   mfgIssueLines       MfgIssueLine[]
   mfgStageMaterials   MfgStageMaterial[]
-  customerProdOrders  CustomerProdOrder[]
+  customerProdOrderLines CustomerProdOrderLine[]
 }
 
 /// أصناف مربوطة بمخزن معيّن. لو الصنف مفيهوش صفوف هنا يبقى متاح لكل المخازن.
@@ -475,6 +478,7 @@ model SalesInvoice {
   lines     SalesInvoiceLine[]
   receipts  Receipt[]
   returns   SalesReturn[]
+  prodOrders CustomerProdOrder[]
 
   @@index([invoiceDate])
   @@index([status])
@@ -854,32 +858,83 @@ model TradeDocumentLine {
 enum CustomerProdOrderStatus {
   DRAFT
   CONFIRMED
-  IN_PRODUCTION
+  IN_RUN
   DELIVERED
   CANCELLED
 }
 
-/// أوردر إنتاج للعميل (طلب تشغيل) — غير أمر التصنيع المخزني
-model CustomerProdOrder {
-  id           String                  @id @default(cuid())
-  number       String                  @unique
-  customerId   String
-  description  String
-  quantity     Float
-  unitPrice    Float                   @default(0)
-  orderDate    DateTime                @default(now())
-  deliveryDate DateTime?
-  notes        String?
-  status       CustomerProdOrderStatus @default(DRAFT)
-  productId    String?
-  createdById  String?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+enum WorkOrderStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
 
-  customer Customer @relation(fields: [customerId], references: [id])
-  product  Product? @relation(fields: [productId], references: [id])
+/// أوردر إنتاج ميداني (مهندس + عميل + بنود + مدفوع/متبقي)
+model CustomerProdOrder {
+  id              String                  @id @default(cuid())
+  number          String                  @unique
+  customerId      String
+  engineerId      String?
+  region          String?
+  address         String?
+  paymentMethods  String?
+  totalCost       Float                   @default(0)
+  paidAmount      Float                   @default(0)
+  orderDate       DateTime                @default(now())
+  receiveDate     DateTime?
+  notes           String?
+  status          CustomerProdOrderStatus @default(DRAFT)
+  workOrderId     String?
+  salesInvoiceId  String?
+  createdById     String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  customer     Customer               @relation(fields: [customerId], references: [id])
+  engineer     User?                  @relation("ProdOrderEngineer", fields: [engineerId], references: [id], onDelete: SetNull)
+  createdBy    User?                  @relation("ProdOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  workOrder    WorkOrder?             @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  salesInvoice SalesInvoice?          @relation(fields: [salesInvoiceId], references: [id], onDelete: SetNull)
+  lines        CustomerProdOrderLine[]
 
   @@index([customerId])
+  @@index([engineerId])
+  @@index([orderDate])
+  @@index([status])
+  @@index([workOrderId])
+}
+
+model CustomerProdOrderLine {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Float
+  unitPrice Float  @default(0)
+  specs     String?
+  sortOrder Int    @default(0)
+
+  order   CustomerProdOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product           @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+/// أمر تشغيل مجمّع من عدة أوردرات إنتاج
+model WorkOrder {
+  id          String          @id @default(cuid())
+  number      String          @unique
+  orderDate   DateTime        @default(now())
+  status      WorkOrderStatus @default(OPEN)
+  notes       String?
+  createdById String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  createdBy User?               @relation("WorkOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  orders    CustomerProdOrder[]
+
   @@index([orderDate])
   @@index([status])
 }

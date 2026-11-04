@@ -19,9 +19,8 @@ const ReturnsPage = lazy(() => import('./pages/ReturnsPage').then((m) => ({ defa
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const StockPage = lazy(() => import('./pages/StockPage').then((m) => ({ default: m.StockPage })));
-const ProductionPage = lazy(() => import('./pages/ProductionPage').then((m) => ({ default: m.ProductionPage })));
 const ProdOrdersPage = lazy(() => import('./pages/ProdOrdersPage').then((m) => ({ default: m.ProdOrdersPage })));
-const CostingPage = lazy(() => import('./pages/CostingPage').then((m) => ({ default: m.CostingPage })));
+const WorkOrdersPage = lazy(() => import('./pages/WorkOrdersPage').then((m) => ({ default: m.WorkOrdersPage })));
 const DocumentsPage = lazy(() => import('./pages/DocumentsPage').then((m) => ({ default: m.DocumentsPage })));
 const FinancePage = lazy(() => import('./pages/FinancePage').then((m) => ({ default: m.FinancePage })));
 const HrPage = lazy(() => import('./pages/HrPage').then((m) => ({ default: m.HrPage })));
@@ -71,9 +70,10 @@ export default function App() {
           <Route path="warehouses" element={<PageGuard page="warehouses"><WarehousesPage /></PageGuard>} />
           <Route path="products" element={<PageGuard page="products"><ProductsPage /></PageGuard>} />
           <Route path="stock" element={<PageGuard page="stock"><StockPage /></PageGuard>} />
-          <Route path="production" element={<PageGuard page="production"><ProductionPage /></PageGuard>} />
-          <Route path="costing" element={<PageGuard page="production"><CostingPage /></PageGuard>} />
+          <Route path="production" element={<Navigate to="/prod-orders" replace />} />
+          <Route path="costing" element={<Navigate to="/prod-orders" replace />} />
           <Route path="prod-orders" element={<PageGuard page="production"><ProdOrdersPage /></PageGuard>} />
+          <Route path="work-orders" element={<PageGuard page="production"><WorkOrdersPage /></PageGuard>} />
           <Route path="suppliers" element={<PageGuard page="suppliers"><SuppliersPage /></PageGuard>} />
           <Route path="customers" element={<PageGuard page="customers"><CustomersPage /></PageGuard>} />
           <Route path="cash" element={<PageGuard page="cash"><CashPage /></PageGuard>} />

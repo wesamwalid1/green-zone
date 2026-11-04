@@ -1,11 +1,12 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CustomerProdOrderStatus, MfgStageKind, Role } from '@prisma/client';
+import { CustomerProdOrderStatus, MfgStageKind, Role, WorkOrderStatus } from '@prisma/client';
 import { Roles } from '../common/guards';
 import { MfgService } from './mfg.service';
 import { ProdOrdersService } from './prod-orders.service';
 import { ProductionService } from './production.service';
+import { WorkOrdersService } from './work-orders.service';
 
 class BomLineDto {
   @IsString() materialId!: string;
@@ -82,27 +83,55 @@ class CompleteStageDto {
   materials?: MfgIssueDto[];
 }
 
-class CreateProdOrderDto {
-  @IsString() customerId!: string;
-  @IsString() description!: string;
+class ProdOrderLineDto {
+  @IsString() productId!: string;
   @IsNumber() quantity!: number;
   @IsOptional() @IsNumber() unitPrice?: number;
+  @IsOptional() @IsString() specs?: string | null;
+}
+
+class CreateProdOrderDto {
+  @IsString() customerId!: string;
+  @IsOptional() @IsString() engineerId?: string;
+  @IsOptional() @IsString() region?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() paymentMethods?: string;
+  @IsOptional() @IsNumber() totalCost?: number;
+  @IsOptional() @IsNumber() paidAmount?: number;
   @IsOptional() @IsString() orderDate?: string;
-  @IsOptional() @IsString() deliveryDate?: string;
+  @IsOptional() @IsString() receiveDate?: string;
   @IsOptional() @IsString() notes?: string;
-  @IsOptional() @IsString() productId?: string;
+  @IsArray() @ValidateNested({ each: true }) @Type(() => ProdOrderLineDto)
+  lines!: ProdOrderLineDto[];
 }
 
 class UpdateProdOrderDto {
   @IsOptional() @IsString() customerId?: string;
-  @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsNumber() quantity?: number;
-  @IsOptional() @IsNumber() unitPrice?: number;
+  @IsOptional() @IsString() engineerId?: string | null;
+  @IsOptional() @IsString() region?: string | null;
+  @IsOptional() @IsString() address?: string | null;
+  @IsOptional() @IsString() paymentMethods?: string | null;
+  @IsOptional() @IsNumber() totalCost?: number;
+  @IsOptional() @IsNumber() paidAmount?: number;
   @IsOptional() @IsString() orderDate?: string;
-  @IsOptional() @IsString() deliveryDate?: string | null;
+  @IsOptional() @IsString() receiveDate?: string | null;
   @IsOptional() @IsString() notes?: string | null;
-  @IsOptional() @IsString() productId?: string | null;
   @IsOptional() @IsEnum(CustomerProdOrderStatus) status?: CustomerProdOrderStatus;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ProdOrderLineDto)
+  lines?: ProdOrderLineDto[];
+}
+
+class CreateWorkOrderDto {
+  @IsArray() @IsString({ each: true }) orderIds!: string[];
+  @IsOptional() @IsString() notes?: string;
+}
+
+class WorkOrderStatusDto {
+  @IsEnum(WorkOrderStatus) status!: WorkOrderStatus;
+}
+
+class WorkOrderOrdersDto {
+  @IsArray() @IsString({ each: true }) orderIds!: string[];
 }
 
 class TransferMfgDto {
@@ -121,12 +150,23 @@ export class ProductionController {
     private service: ProductionService,
     private mfg: MfgService,
     private prodOrders: ProdOrdersService,
+    private workOrders: WorkOrdersService,
   ) {}
 
   // ─── أوردر إنتاج للعميل ───────────────────────────────────
+  @Get('prod-orders/engineers')
+  listEngineers() {
+    return this.prodOrders.listEngineers();
+  }
+
+  @Get('prod-orders/available')
+  listAvailableProdOrders() {
+    return this.prodOrders.listAvailableForWorkOrder();
+  }
+
   @Get('prod-orders')
-  listProdOrders() {
-    return this.prodOrders.list();
+  listProdOrders(@Req() req: { user: { userId: string; role: Role } }) {
+    return this.prodOrders.list(req.user);
   }
 
   @Get('prod-orders/:id')
@@ -147,6 +187,46 @@ export class ProductionController {
   @Delete('prod-orders/:id')
   deleteProdOrder(@Param('id') id: string) {
     return this.prodOrders.remove(id);
+  }
+
+  // ─── أمر تشغيل مجمّع ─────────────────────────────────────
+  @Get('work-orders')
+  listWorkOrders() {
+    return this.workOrders.list();
+  }
+
+  @Get('work-orders/:id')
+  getWorkOrder(@Param('id') id: string) {
+    return this.workOrders.get(id);
+  }
+
+  @Post('work-orders')
+  createWorkOrder(@Body() dto: CreateWorkOrderDto, @Req() req: { user: { userId: string } }) {
+    return this.workOrders.create({ ...dto, createdById: req.user.userId });
+  }
+
+  @Patch('work-orders/:id/status')
+  updateWorkOrderStatus(
+    @Param('id') id: string,
+    @Body() dto: WorkOrderStatusDto,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.workOrders.updateStatus(id, dto.status, req.user.userId);
+  }
+
+  @Post('work-orders/:id/orders')
+  addWorkOrderOrders(@Param('id') id: string, @Body() dto: WorkOrderOrdersDto) {
+    return this.workOrders.addOrders(id, dto.orderIds);
+  }
+
+  @Delete('work-orders/:id/orders/:orderId')
+  removeWorkOrderOrder(@Param('id') id: string, @Param('orderId') orderId: string) {
+    return this.workOrders.removeOrder(id, orderId);
+  }
+
+  @Delete('work-orders/:id')
+  deleteWorkOrder(@Param('id') id: string) {
+    return this.workOrders.remove(id);
   }
 
   @Get('warehouses')

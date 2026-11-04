@@ -95,7 +95,7 @@ export const PAGES: PageDef[] = [
   },
   {
     id: 'production',
-    label: 'التصنيع',
+    label: 'أوردرات الإنتاج',
     group: 'المخزون',
     actions: [
       { id: 'create', label: 'إضافة' },
