@@ -1,8 +1,8 @@
 /**
- * Builds an "install anywhere" package for Pro Pack:
- * - copies win-unpacked -> release/ProPack-Anywhere/app
+ * Builds an "install anywhere" package for Green Zone:
+ * - copies win-unpacked -> release/GreenZone-Anywhere/app
  * - Arabic installer + direct launcher
- * - zips to ProPack-Anywhere.zip
+ * - zips to GreenZone-Anywhere.zip
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -12,11 +12,11 @@ import { execSync } from 'child_process';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const desktop = join(root, 'apps', 'desktop');
 const unpacked = join(desktop, 'release', 'win-unpacked');
-const outDir = join(desktop, 'release', 'ProPack-Anywhere');
-const zipPath = join(desktop, 'release', 'ProPack-Anywhere.zip');
+const outDir = join(desktop, 'release', 'GreenZone-Anywhere');
+const zipPath = join(desktop, 'release', 'GreenZone-Anywhere.zip');
 
 function findExe(dir) {
-  for (const name of ['ProPack.exe', 'Pro Pack.exe', 'M5azen.exe']) {
+  for (const name of ['GreenZone.exe', 'Green Zone.exe', 'M5azen.exe']) {
     if (existsSync(join(dir, name))) return name;
   }
   return null;
@@ -42,8 +42,8 @@ function writeUtf8NoBom(filePath, text) {
 }
 
 writeUtf8Bom(
-  join(outDir, 'Install-ProPack.ps1'),
-  readFileSync(join(desktop, 'setup', 'Install-ProPack.ps1'), 'utf8'),
+  join(outDir, 'Install-GreenZone.ps1'),
+  readFileSync(join(desktop, 'setup', 'Install-GreenZone.ps1'), 'utf8'),
 );
 writeUtf8NoBom(
   join(outDir, 'تثبيت.bat'),
@@ -76,11 +76,11 @@ writeUtf8NoBom(
 writeUtf8Bom(
   join(outDir, 'اقرأني.txt'),
   [
-    'Pro Pack — نسخة ديسكتوب كاملة لأي جهاز ويندوز 64-bit',
+    'Green Zone — نسخة ديسكتوب كاملة لأي جهاز ويندوز 64-bit',
     '',
     'الطريقة الأسهل:',
     '1) افتح: تثبيت.bat',
-    '2) اختر أي مجلد (مثلاً C:\\ProPack أو D:\\ProPack)',
+    '2) اختر أي مجلد (مثلاً C:\\GreenZone أو D:\\GreenZone)',
     '3) اضغط «تثبيت وتشغيل»',
     '',
     'بدون تثبيت:',

@@ -54,10 +54,10 @@ export function LoginPage() {
         <div className="relative overflow-hidden bg-gradient-to-br from-brand-800 to-brand-950 px-6 pb-16 pt-8 text-white lg:hidden">
           <div className="hero-grid pointer-events-none absolute inset-0 opacity-40" />
           <div className="relative flex items-center gap-3">
-            <img src="/pro-pack-logo.png" alt="Pro Pack" className="h-16 w-16 rounded-2xl bg-[#f4f0e8] object-contain object-center shadow-lg ring-1 ring-white/30" draggable={false} />
+            <img src="/green-zone-mark.png" alt="Green Zone" className="h-16 w-16 rounded-2xl bg-white object-contain object-center shadow-lg ring-1 ring-white/30" draggable={false} />
             <div>
-              <div className="text-base font-extrabold tracking-tight">Pro Pack</div>
-              <div className="text-xs text-brand-200">طباعة مواد التعبئة والتغليف</div>
+              <div className="text-base font-extrabold tracking-tight">Green Zone</div>
+              <div className="text-xs text-brand-200">للأسمدة والكيماويات</div>
             </div>
           </div>
         </div>
@@ -68,10 +68,10 @@ export function LoginPage() {
           <div className="w-full max-w-[440px]">
             <div className="modal-panel rounded-[1.75rem] border border-slate-200/80 bg-white p-7 shadow-[0_1px_3px_rgba(15,28,46,0.06),0_24px_60px_-20px_rgba(15,28,46,0.25)] sm:p-9">
               <div className="mb-8 hidden items-center gap-3 lg:flex">
-                <img src="/pro-pack-logo.png" alt="Pro Pack" className="h-[4.75rem] w-[4.75rem] rounded-2xl bg-[#f4f0e8] object-contain object-center shadow-md ring-1 ring-slate-200" draggable={false} />
+                <img src="/green-zone-mark.png" alt="Green Zone" className="h-[4.75rem] w-[4.75rem] rounded-2xl bg-white object-contain object-center shadow-md ring-1 ring-slate-200" draggable={false} />
                 <div>
-                  <div className="text-[15px] font-extrabold tracking-tight text-slate-900">Pro Pack</div>
-                  <div className="text-xs font-medium text-muted">طباعة مواد التعبئة والتغليف</div>
+                  <div className="text-[15px] font-extrabold tracking-tight text-slate-900">Green Zone</div>
+                  <div className="text-xs font-medium text-muted">للأسمدة والكيماويات</div>
                 </div>
               </div>
 
@@ -171,7 +171,7 @@ export function LoginPage() {
 
             <div className="mt-5 flex items-center justify-between px-2 text-[11px] text-muted">
               <span className="flex items-center gap-1"><ShieldCheck size={13} className="text-emerald-600" /> الدخول محمي بصلاحيات المستخدم</span>
-              <span>© {new Date().getFullYear()} Pro Pack</span>
+              <span>© {new Date().getFullYear()} Green Zone</span>
             </div>
           </div>
         </div>
@@ -185,11 +185,11 @@ export function LoginPage() {
 
           <div className="relative flex items-center gap-3">
             <span className="grid h-14 w-14 place-items-center rounded-2xl bg-white p-1.5 shadow-xl shadow-black/20">
-              <img src="/pro-pack-logo.png" alt="Pro Pack" className="h-full w-full object-contain" draggable={false} />
+              <img src="/green-zone-mark.png" alt="Green Zone" className="h-full w-full object-contain" draggable={false} />
             </span>
             <div>
-              <div className="text-lg font-extrabold">Pro Pack</div>
-              <div className="text-xs text-brand-200">طباعة مواد التعبئة والتغليف</div>
+              <div className="text-lg font-extrabold">Green Zone</div>
+              <div className="text-xs text-brand-200">للأسمدة والكيماويات</div>
             </div>
           </div>
 

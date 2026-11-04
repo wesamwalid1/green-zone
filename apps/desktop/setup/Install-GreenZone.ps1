@@ -24,11 +24,11 @@ function Format-Size([int64]$bytes) {
 
 function Find-AppExe([string]$dir) {
   if (-not (Test-Path -LiteralPath $dir)) { return $null }
-  foreach ($name in @('ProPack.exe', 'Pro Pack.exe', 'M5azen.exe')) {
+  foreach ($name in @('GreenZone.exe', 'Green Zone.exe', 'M5azen.exe')) {
     $direct = Join-Path $dir $name
     if (Test-Path -LiteralPath $direct) { return $direct }
   }
-  foreach ($name in @('ProPack.exe', 'Pro Pack.exe', 'M5azen.exe')) {
+  foreach ($name in @('GreenZone.exe', 'Green Zone.exe', 'M5azen.exe')) {
     $hit = Get-ChildItem -LiteralPath $dir -Filter $name -Recurse -File -ErrorAction SilentlyContinue |
       Select-Object -First 1 -ExpandProperty FullName
     if ($hit) { return $hit }
@@ -36,11 +36,11 @@ function Find-AppExe([string]$dir) {
   return $null
 }
 
-function Clear-ProPackData {
+function Clear-GreenZoneData {
   $roots = @(
-    (Join-Path $env:APPDATA 'ProPack'),
+    (Join-Path $env:APPDATA 'GreenZone'),
     (Join-Path $env:APPDATA '@m5azen'),
-    (Join-Path $env:LOCALAPPDATA 'ProPack')
+    (Join-Path $env:LOCALAPPDATA 'GreenZone')
   )
   foreach ($root in $roots) {
     if (Test-Path -LiteralPath $root) {
@@ -57,7 +57,7 @@ function Copy-AppFiles([string]$from, [string]$to) {
       $from, $to, '/E', '/COPY:DAT', '/R:2', '/W:2', '/NFL', '/NDL', '/NJH', '/NJS', '/NP'
     ) -Wait -PassThru -WindowStyle Hidden
     if ($p.ExitCode -ge 8) {
-      throw "فشل النسخ (robocopy code $($p.ExitCode)). جرّب مسارًا محليًا مثل C:\ProPack"
+      throw "فشل النسخ (robocopy code $($p.ExitCode)). جرّب مسارًا محليًا مثل C:\GreenZone"
     }
     return
   }
@@ -77,7 +77,7 @@ foreach ($c in $candidates) {
 if (-not $source) {
   [void][System.Windows.Forms.MessageBox]::Show(
     "لم يتم العثور على ملفات التطبيق.`nضع المثبّت بجانب مجلد app.",
-    'Pro Pack',
+    'Green Zone',
     'OK',
     'Error'
   )
@@ -96,7 +96,7 @@ $required = (Get-ChildItem -LiteralPath $source -Recurse -File -ErrorAction Sile
 if (-not $required) { $required = 900MB }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'تثبيت Pro Pack'
+$form.Text = 'تثبيت Green Zone'
 $form.Width = 560
 $form.Height = 320
 $form.StartPosition = 'CenterScreen'
@@ -110,7 +110,7 @@ if ($iconPath) {
 }
 
 $lbl = New-Object System.Windows.Forms.Label
-$lbl.Text = "اختر مجلدًا محليًا (مثل C:\ProPack أو D:\ProPack).`nالمطلوب تقريباً: $(Format-Size $required)`nالتثبيت يفتح نسخة فارغة بدون بيانات قديمة."
+$lbl.Text = "اختر مجلدًا محليًا (مثل C:\GreenZone أو D:\GreenZone).`nالمطلوب تقريباً: $(Format-Size $required)`nالتثبيت يفتح نسخة فارغة بدون بيانات قديمة."
 $lbl.AutoSize = $false
 $lbl.Width = 520
 $lbl.Height = 60
@@ -122,7 +122,7 @@ $pathBox = New-Object System.Windows.Forms.TextBox
 $pathBox.Width = 400
 $pathBox.Left = 16
 $pathBox.Top = 85
-$pathBox.Text = 'C:\ProPack'
+$pathBox.Text = 'C:\GreenZone'
 $form.Controls.Add($pathBox)
 
 $browse = New-Object System.Windows.Forms.Button
@@ -186,7 +186,7 @@ $browse.Add_Click({
   $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
   $dlg.Description = 'اختر مجلد التثبيت'
   if ($dlg.ShowDialog() -eq 'OK') {
-    $pathBox.Text = Join-Path $dlg.SelectedPath 'ProPack'
+    $pathBox.Text = Join-Path $dlg.SelectedPath 'GreenZone'
     Refresh-Space
   }
 })
@@ -195,13 +195,13 @@ Refresh-Space
 
 $runOnly.Add_Click({
   try {
-    if ($freshBox.Checked) { Clear-ProPackData }
+    if ($freshBox.Checked) { Clear-GreenZoneData }
     $exe = Find-AppExe $source
-    if (-not $exe) { throw 'ProPack.exe غير موجود في مجلد app' }
+    if (-not $exe) { throw 'GreenZone.exe غير موجود في مجلد app' }
     Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe)
     $form.Close()
   } catch {
-    [void][System.Windows.Forms.MessageBox]::Show("تعذر التشغيل:`n$($_.Exception.Message)", 'Pro Pack', 'OK', 'Error')
+    [void][System.Windows.Forms.MessageBox]::Show("تعذر التشغيل:`n$($_.Exception.Message)", 'Green Zone', 'OK', 'Error')
   }
 })
 
@@ -210,36 +210,36 @@ $install.Add_Click({
     $dest = $pathBox.Text.Trim().TrimEnd('\')
     if (-not $dest) { return }
     if ($dest -match '(?i)\\\\|mtp|phone|mobile|OneDrive\\Mobile') {
-      throw 'المسار يبدو غير محلي. استخدم مثلاً C:\ProPack'
+      throw 'المسار يبدو غير محلي. استخدم مثلاً C:\GreenZone'
     }
     $install.Enabled = $false
     $runOnly.Enabled = $false
     $install.Text = 'جاري النسخ...'
     [System.Windows.Forms.Application]::DoEvents()
 
-    if ($freshBox.Checked) { Clear-ProPackData }
+    if ($freshBox.Checked) { Clear-GreenZoneData }
     Copy-AppFiles -from $source -to $dest
 
     $exe = Find-AppExe $dest
     if (-not $exe) {
       $sample = (Get-ChildItem -LiteralPath $dest -ErrorAction SilentlyContinue | Select-Object -First 8 -ExpandProperty Name) -join ', '
-      throw "تعذر العثور على ProPack.exe بعد النسخ.`nالمسار: $dest`nمحتوى المجلد: $sample"
+      throw "تعذر العثور على GreenZone.exe بعد النسخ.`nالمسار: $dest`nمحتوى المجلد: $sample"
     }
 
     $wsh = New-Object -ComObject WScript.Shell
     $desk = [Environment]::GetFolderPath('Desktop')
-    $lnkPath = Join-Path $desk 'Pro Pack.lnk'
+    $lnkPath = Join-Path $desk 'Green Zone.lnk'
     $lnk = $wsh.CreateShortcut($lnkPath)
     $lnk.TargetPath = $exe
     $lnk.WorkingDirectory = (Split-Path -Parent $exe)
-    $lnk.Description = 'Pro Pack'
+    $lnk.Description = 'Green Zone'
     if ($iconPath) { $lnk.IconLocation = "$iconPath,0" }
     $lnk.Save()
 
     Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe)
     $form.Close()
   } catch {
-    [void][System.Windows.Forms.MessageBox]::Show("فشل التثبيت:`n$($_.Exception.Message)", 'Pro Pack', 'OK', 'Error')
+    [void][System.Windows.Forms.MessageBox]::Show("فشل التثبيت:`n$($_.Exception.Message)", 'Green Zone', 'OK', 'Error')
     $install.Text = 'تثبيت وتشغيل'
     $install.Enabled = $true
     $runOnly.Enabled = $true

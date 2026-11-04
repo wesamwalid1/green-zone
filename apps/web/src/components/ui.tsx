@@ -471,10 +471,10 @@ export function SearchBox({
 export function BrandMark({ size = 'md', className = '' }: { size?: 'sm' | 'md' | 'lg'; className?: string }) {
   const box = size === 'lg' ? 'h-28 w-28' : size === 'sm' ? 'h-12 w-12' : 'h-[4.5rem] w-[4.5rem]';
   return (
-    <div className={`brand-mark shrink-0 overflow-hidden rounded-2xl bg-[#f4f0e8] shadow-md ring-1 ring-black/10 ${box} ${className}`}>
+    <div className={`brand-mark shrink-0 overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-black/10 ${box} ${className}`}>
       <img
-        src="/pro-pack-logo.png"
-        alt="Pro Pack"
+        src="/green-zone-mark.png"
+        alt="Green Zone"
         className="h-full w-full object-contain object-center"
         draggable={false}
       />
@@ -485,8 +485,8 @@ export function BrandMark({ size = 'md', className = '' }: { size?: 'sm' | 'md' 
 export function PrintHeader({
   title,
   subtitle,
-  brand = 'Pro Pack',
-  brandHint = 'طباعة مواد التعبئة والتغليف',
+  brand = 'Green Zone',
+  brandHint = 'للأسمدة والكيماويات',
 }: {
   title: string;
   subtitle?: string;

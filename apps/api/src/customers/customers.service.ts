@@ -10,7 +10,7 @@ import { money, type StatementRow, withRunningBalance } from '../common/party-st
 export const WALK_IN_CODE = 'WALKIN';
 export const WALK_IN_NAME = 'عميل سريع';
 
-const DEFAULT_CONTRACT_TERMS = `يتعهد العميل بالتعامل مع مصنع Pro Pack وفق الشروط المتفق عليها، والالتزام بمواعيد السداد والكميات المعتمدة، ويقر بصحة بياناته الموضحة أعلاه.`;
+const DEFAULT_CONTRACT_TERMS = `يتعهد العميل بالتعامل مع شركة Green Zone وفق الشروط المتفق عليها، والالتزام بمواعيد السداد والكميات المعتمدة، ويقر بصحة بياناته الموضحة أعلاه.`;
 
 @Injectable()
 export class CustomersService implements OnModuleInit {

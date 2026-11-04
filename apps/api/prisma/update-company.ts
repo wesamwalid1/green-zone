@@ -5,8 +5,8 @@ const prisma = new PrismaClient();
 async function main() {
   await prisma.setting.upsert({
     where: { key: 'companyName' },
-    create: { key: 'companyName', value: 'Pro Pack' },
-    update: { value: 'Pro Pack' },
+    create: { key: 'companyName', value: 'Green Zone' },
+    update: { value: 'Green Zone' },
   });
   console.log('company name updated');
 }

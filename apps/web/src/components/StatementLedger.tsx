@@ -166,7 +166,7 @@ export function StatementLedger({ data }: { data: LedgerPayload }) {
             const workbook = new ExcelJS.Workbook();
             const sheet = workbook.addWorksheet('كشف حساب');
             sheet.views = [{ rightToLeft: true }];
-            sheet.addRow(['Pro Pack', 'طباعة مواد التعبئة والتغليف']);
+            sheet.addRow(['Green Zone', 'للأسمدة والكيماويات']);
             sheet.addRow([data.title, data.partyName]);
             sheet.addRow(['الرصيد', signedBalance, side]);
             sheet.addRow(['الإجمالي', totalLine || totalDaen, 'مدفوع', totalPaid, 'متبقي', totalDue]);

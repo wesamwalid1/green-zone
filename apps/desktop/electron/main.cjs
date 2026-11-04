@@ -8,10 +8,10 @@ const crypto = require('crypto');
 const PORT = Number(process.env.M5AZEN_PORT || 39101);
 const HOST = '127.0.0.1';
 
-// مسار بيانات نظيف باسم ProPack (مش مجلد @m5azen القديم)
+// مسار بيانات نظيف باسم GreenZone (مش مجلد @m5azen القديم)
 try {
-  app.setName('ProPack');
-  app.setPath('userData', path.join(app.getPath('appData'), 'ProPack'));
+  app.setName('GreenZone');
+  app.setPath('userData', path.join(app.getPath('appData'), 'GreenZone'));
 } catch {
   /* before ready is fine on Electron 35 */
 }
@@ -267,12 +267,12 @@ function showSplash() {
     webPreferences: { sandbox: true },
   });
   const logoSrc = app.isPackaged
-    ? path.join(process.resourcesPath, 'server', 'web', 'pro-pack-logo.png').replace(/\\/g, '/')
-    : path.join(repoRoot(), 'apps', 'web', 'public', 'pro-pack-logo.png').replace(/\\/g, '/');
+    ? path.join(process.resourcesPath, 'server', 'web', 'green-zone-mark.png').replace(/\\/g, '/')
+    : path.join(repoRoot(), 'apps', 'web', 'public', 'green-zone-mark.png').replace(/\\/g, '/');
   const html = `<!doctype html><html dir="rtl"><body style="margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:#0f1c2e;color:#fff;display:grid;place-items:center;height:100vh">
     <div style="text-align:center;padding:24px">
-      <img src="file:///${logoSrc}" alt="Pro Pack" style="width:88px;height:88px;border-radius:18px;background:#f4f0e8;object-fit:contain"/>
-      <div style="margin-top:16px;font-size:22px;font-weight:800">Pro Pack</div>
+      <img src="file:///${logoSrc}" alt="Green Zone" style="width:88px;height:88px;border-radius:18px;background:#ffffff;object-fit:contain"/>
+      <div style="margin-top:16px;font-size:22px;font-weight:800">Green Zone</div>
       <div style="margin-top:8px;opacity:.85;font-size:13px">جاري تشغيل النظام...</div>
       <div style="margin:18px auto 0;width:180px;height:4px;border-radius:99px;background:#1e293b;overflow:hidden">
         <div style="width:40%;height:100%;background:#38bdf8;animation:a 1.2s infinite alternate"></div>
@@ -296,7 +296,7 @@ function createWindow() {
     height: 860,
     minWidth: 1024,
     minHeight: 700,
-    title: 'Pro Pack',
+    title: 'Green Zone',
     icon: iconFile(),
     show: false,
     backgroundColor: '#0f1c2e',
@@ -331,7 +331,7 @@ async function boot() {
     closeSplash();
     appendLog(`boot failed: ${err instanceof Error ? err.message : err}`);
     dialog.showErrorBox(
-      'تعذر تشغيل Pro Pack',
+      'تعذر تشغيل Green Zone',
       `${err instanceof Error ? err.message : String(err)}\n\nسجل التشغيل:\n${userPaths().logFile}`,
     );
     stopServer();

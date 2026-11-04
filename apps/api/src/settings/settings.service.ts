@@ -18,7 +18,7 @@ export class SettingsService {
       map[s.key] = s.value;
     }
     return {
-      companyName: map.companyName || 'Pro Pack',
+      companyName: map.companyName || 'Green Zone',
       apiUrl: map.apiUrl || '',
       ...map,
       editPasswordSet: settings.some((row) => row.key === 'editPasswordHash' && row.value) ? '1' : '0',

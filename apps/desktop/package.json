@@ -2,7 +2,7 @@
   "name": "@m5azen/desktop",
   "version": "1.0.1",
   "private": true,
-  "description": "Pro Pack - نظام إدارة المخازن والطباعة",
+  "description": "Green Zone - نظام إدارة المخازن للأسمدة والكيماويات",
   "author": "AK Tech",
   "main": "electron/main.cjs",
   "scripts": {
@@ -13,9 +13,9 @@
     "tauri": "tauri"
   },
   "build": {
-    "appId": "com.propack.app",
-    "productName": "ProPack",
-    "copyright": "Copyright (c) Pro Pack",
+    "appId": "com.greenzone.app",
+    "productName": "GreenZone",
+    "copyright": "Copyright (c) Green Zone",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -49,7 +49,7 @@
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "signDlls": false,
-      "executableName": "ProPack",
+      "executableName": "GreenZone",
       "target": [
         {
           "target": "nsis",
@@ -66,7 +66,7 @@
       ]
     },
     "portable": {
-      "artifactName": "ProPack-portable-${version}.${ext}"
+      "artifactName": "GreenZone-portable-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -75,11 +75,11 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Pro Pack",
+      "shortcutName": "Green Zone",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
-      "artifactName": "ProPack-Setup-${version}.${ext}",
+      "artifactName": "GreenZone-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": true,
       "installerLanguages": [
         "en_US"

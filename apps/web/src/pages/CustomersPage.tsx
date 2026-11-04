@@ -656,7 +656,7 @@ export function CustomersPage() {
         {contractView && (
           <div>
             <div className="mb-4 overflow-hidden rounded-2xl bg-brand-900 px-5 py-4 text-white no-print">
-              <div className="text-xs text-brand-200">تعاقد Pro Pack</div>
+              <div className="text-xs text-brand-200">تعاقد Green Zone</div>
               <div className="text-2xl font-extrabold">{contractView.number}</div>
               <div className="mt-1 text-sm text-brand-100">{contractView.customer.name} · {formatDate(contractView.contractDate)}</div>
             </div>
@@ -666,8 +666,8 @@ export function CustomersPage() {
               <PrintHeader
                 title={contractView.title}
                 subtitle={`رقم ${contractView.number}`}
-                brand="Pro Pack"
-                brandHint="مصنع التعبئة والتغليف"
+                brand="Green Zone"
+                brandHint="للأسمدة والكيماويات"
               />
 
               <div className="grid gap-3 sm:grid-cols-2">
@@ -708,7 +708,7 @@ export function CustomersPage() {
 
               <div className="rounded-xl border border-slate-300 bg-white p-4 text-sm leading-7 text-slate-800">
                 <div className="mb-2 font-extrabold text-brand-800">شروط التعاقد</div>
-                {contractView.terms || 'يتعهد العميل بالتعامل مع مصنع Pro Pack وفق الشروط المتفق عليها، والالتزام بمواعيد السداد والكميات المعتمدة، ويقر بصحة بياناته الموضحة أعلاه.'}
+                {contractView.terms || 'يتعهد العميل بالتعامل مع شركة Green Zone وفق الشروط المتفق عليها، والالتزام بمواعيد السداد والكميات المعتمدة، ويقر بصحة بياناته الموضحة أعلاه.'}
               </div>
 
               <div className="mt-10 grid grid-cols-2 gap-8 print:mt-14">
@@ -721,8 +721,8 @@ export function CustomersPage() {
                 <div className="rounded-xl border-2 border-dashed border-slate-400 bg-white p-4 text-center">
                   <div className="mb-2 text-xs font-bold text-slate-500">توقيع المدير</div>
                   <div className="mx-auto mb-3 flex h-20 w-full max-w-[14rem] items-end justify-center border-b-2 border-slate-500" />
-                  <div className="font-extrabold text-slate-900">مدير Pro Pack</div>
-                  <div className="mt-1 text-xs text-muted">مصنع التعبئة والتغليف</div>
+                  <div className="font-extrabold text-slate-900">مدير Green Zone</div>
+                  <div className="mt-1 text-xs text-muted">للأسمدة والكيماويات</div>
                 </div>
               </div>
             </div>

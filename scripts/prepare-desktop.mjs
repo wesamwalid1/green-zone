@@ -112,7 +112,7 @@ async function main() {
     });
     await prisma.setting.upsert({
       where: { key: 'companyName' },
-      create: { key: 'companyName', value: 'Pro Pack' },
+      create: { key: 'companyName', value: 'Green Zone' },
       update: {},
     });
     await prisma.warehouse.upsert({
@@ -171,13 +171,13 @@ async function main() {
     const p = join(serverPack, 'prisma', name);
     if (existsSync(p)) rmSync(p, { force: true });
   }
-  // تأكد أن لوجو الواجهة/السبلاش هو لوجو Pro Pack
-  const brandFull = join(root, 'apps', 'web', 'public', 'pro-pack-logo.png');
+  // تأكد أن لوجو الواجهة/السبلاش هو لوجو Green Zone
+  const brandFull = join(root, 'apps', 'web', 'public', 'green-zone-mark.png');
   const brandIcon = join(desktop, 'build', 'icon.png');
   if (existsSync(brandFull)) {
-    copyDir(brandFull, join(serverPack, 'web', 'pro-pack-logo.png'));
+    copyDir(brandFull, join(serverPack, 'web', 'green-zone-mark.png'));
   } else if (existsSync(brandIcon)) {
-    copyDir(brandIcon, join(serverPack, 'web', 'pro-pack-logo.png'));
+    copyDir(brandIcon, join(serverPack, 'web', 'green-zone-mark.png'));
   }
   if (existsSync(brandIcon)) {
     copyDir(brandIcon, join(serverPack, 'web', 'favicon.png'));

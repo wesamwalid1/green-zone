@@ -52,7 +52,7 @@ export function AppLayout() {
     setUserOpen(false);
     setNoticeOpen(false);
     if (current) pushRecent({ id: current.to, title: current.label, subtitle: 'صفحة', to: current.to });
-    document.title = current ? `${current.label} · Pro Pack` : 'Pro Pack — نظام إدارة المخازن';
+    document.title = current ? `${current.label} · Green Zone` : 'Green Zone — نظام إدارة المخازن';
   }, [location.pathname, current]);
 
   useEffect(() => {
@@ -115,10 +115,10 @@ export function AppLayout() {
         <div className="pointer-events-none absolute -top-24 -left-20 h-56 w-56 rounded-full bg-sky-400/15 blur-3xl" />
         <div className="relative flex items-center justify-between border-b border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
-            <img src="/pro-pack-logo.png" alt="Pro Pack" className="h-16 w-16 rounded-2xl bg-[#f4f0e8] object-contain object-center shadow-lg shadow-black/25 ring-1 ring-white/30" draggable={false} />
+            <img src="/green-zone-mark.png" alt="Green Zone" className="h-16 w-16 rounded-2xl bg-white object-contain object-center shadow-lg shadow-black/25 ring-1 ring-white/30" draggable={false} />
             <div className="min-w-0">
-              <div className="text-[15px] font-extrabold leading-tight tracking-tight">Pro Pack</div>
-              <div className="truncate text-[11px] text-brand-200">طباعة مواد التعبئة والتغليف</div>
+              <div className="text-[15px] font-extrabold leading-tight tracking-tight">Green Zone</div>
+              <div className="truncate text-[11px] text-brand-200">للأسمدة والكيماويات</div>
             </div>
           </div>
           <button className="rounded-lg p-1 text-brand-100 hover:bg-white/10 lg:hidden" onClick={() => setNavOpen(false)}>
