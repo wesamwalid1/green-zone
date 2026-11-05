@@ -13,6 +13,8 @@ class LineDto {
   @IsNumber() quantity!: number;
   @IsNumber() unitCost!: number;
   @IsOptional() @IsNumber() discount?: number;
+  @IsOptional() @IsString() invoiceUnit?: string;
+  @IsOptional() @IsNumber() unitFactor?: number;
   @IsOptional() @IsNumber() netWeight?: number;
   @IsOptional() @IsString() batchNumber?: string;
   @IsOptional() @IsString() expiryDate?: string;

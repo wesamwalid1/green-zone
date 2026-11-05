@@ -5,6 +5,7 @@ import { SequenceService } from '../common/sequence.service';
 import { normalizeTenders, postCustomerTenders, reverseSaleMoney, sumTenders, syncSaleTenders, TenderInput } from '../cash/tenders';
 import { assertPeriodsOpen } from '../settings/period-lock';
 import { assertPaidFits, lineAmount, paidAmountOf, postStockLine, statusFromPayment, sumLineTotals, taxFromPercent } from '../common/invoice-post';
+import { resolveTradeQty } from '../common/trade-units';
 import { claimRequest, finishRequest, releaseRequest } from '../common/idempotency';
 import { pageResult, readPage } from '../common/paging';
 import { dueTone } from '../common/due';
@@ -102,7 +103,15 @@ export class SalesService {
     confirm?: boolean;
     createdById?: string;
     idempotencyKey?: string;
-    lines: { productId: string; quantity: number; unitPrice: number; discount?: number }[];
+    lines: {
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+      discount?: number;
+      invoiceUnit?: string;
+      unitFactor?: number;
+      netWeight?: number;
+    }[];
   }) {
     if (!data.lines?.length) throw new BadRequestException('أضف بنوداً للفاتورة');
     const claim = await claimRequest(this.prisma, { key: data.idempotencyKey, scope: 'sales', userId: data.createdById });
@@ -130,7 +139,15 @@ export class SalesService {
     shiftId?: string | null;
     confirm?: boolean;
     createdById?: string;
-    lines: { productId: string; quantity: number; unitPrice: number; discount?: number; netWeight?: number }[];
+    lines: {
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+      discount?: number;
+      invoiceUnit?: string;
+      unitFactor?: number;
+      netWeight?: number;
+    }[];
   }) {
     await assertPeriodsOpen(this.prisma, data.invoiceDate || new Date());
     if (data.shiftId) await this.assertOpenShift(data.shiftId);
@@ -141,18 +158,26 @@ export class SalesService {
     });
     const costOf = (productId: string) => products.find((p) => p.id === productId)?.costPrice || 0;
     const lines = data.lines.map((l) => {
-      const qty = Number(l.quantity) || 0;
-      const weight = l.netWeight != null ? Number(l.netWeight) || 0 : 0;
-      const billQty = weight > 0 ? weight : qty;
+      const resolved = resolveTradeQty({
+        quantity: l.quantity,
+        unitFactor: l.unitFactor,
+        netWeight: l.netWeight,
+        invoiceUnit: l.invoiceUnit,
+      });
+      if (!(resolved.invoiceQty > 0) || !(resolved.stockQty > 0)) {
+        throw new BadRequestException('كمية البند غير صالحة');
+      }
       return {
         productId: l.productId,
-        quantity: qty > 0 ? qty : billQty,
+        quantity: resolved.invoiceQty,
         unitPrice: l.unitPrice,
         discount: l.discount || 0,
-        total: lineAmount(billQty, l.unitPrice, l.discount),
+        total: lineAmount(resolved.invoiceQty, l.unitPrice, l.discount),
         unitCost: costOf(l.productId),
-        netWeight: weight > 0 ? weight : null,
-        stockQty: billQty,
+        invoiceUnit: resolved.invoiceUnit,
+        unitFactor: resolved.unitFactor,
+        netWeight: resolved.legacyWeight ? resolved.stockQty : null,
+        stockQty: resolved.stockQty,
       };
     });
     const subtotal = sumLineTotals(lines);
@@ -179,7 +204,11 @@ export class SalesService {
             type: StockMovementType.SALE,
             reference: number,
             direction: 'out',
-            note: line.netWeight != null ? `وزن: ${line.netWeight}` : null,
+            note: line.invoiceUnit
+              ? `${line.quantity} ${line.invoiceUnit}`
+              : line.netWeight != null
+                ? `وزن: ${line.netWeight}`
+                : null,
           });
         }
         await tx.customer.update({
@@ -241,17 +270,26 @@ export class SalesService {
     for (let i = 0; i < parts.length; i++) receiptNumbers.push(await this.sequence.next('receipts', 'RCP'));
     return this.prisma.$transaction(async (tx) => {
       for (const line of inv.lines) {
-        const stockQty = line.netWeight != null && line.netWeight > 0 ? line.netWeight : line.quantity;
+        const resolved = resolveTradeQty({
+          quantity: line.quantity,
+          unitFactor: line.unitFactor,
+          netWeight: line.netWeight,
+          invoiceUnit: line.invoiceUnit,
+        });
         await postStockLine(tx, {
           warehouseId: inv.warehouseId,
           productId: line.productId,
-          quantity: stockQty,
+          quantity: resolved.stockQty,
           unitCost: line.unitCost || line.product.costPrice,
           type: StockMovementType.SALE,
           reference: inv.number,
           direction: 'out',
           productName: line.product.name,
-          note: line.netWeight != null ? `وزن: ${line.netWeight}` : null,
+          note: line.invoiceUnit
+            ? `${line.quantity} ${line.invoiceUnit}`
+            : line.netWeight != null
+              ? `وزن: ${line.netWeight}`
+              : null,
         });
       }
       await tx.customer.update({
@@ -295,7 +333,16 @@ export class SalesService {
     payments?: TenderInput[];
     confirm?: boolean;
     shiftId?: string | null;
-    lines: { id?: string; productId: string; quantity: number; unitPrice: number; discount?: number; netWeight?: number }[];
+    lines: {
+      id?: string;
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+      discount?: number;
+      invoiceUnit?: string;
+      unitFactor?: number;
+      netWeight?: number;
+    }[];
   }) {
     const inv = await this.prisma.salesInvoice.findUnique({
       where: { id },
@@ -312,19 +359,27 @@ export class SalesService {
     });
     const costOf = (productId: string) => products.find((p) => p.id === productId)?.costPrice || 0;
     const lines = data.lines.map((l) => {
-      const qty = Number(l.quantity) || 0;
-      const weight = l.netWeight != null ? Number(l.netWeight) || 0 : 0;
-      const billQty = weight > 0 ? weight : qty;
+      const resolved = resolveTradeQty({
+        quantity: l.quantity,
+        unitFactor: l.unitFactor,
+        netWeight: l.netWeight,
+        invoiceUnit: l.invoiceUnit,
+      });
+      if (!(resolved.invoiceQty > 0) || !(resolved.stockQty > 0)) {
+        throw new BadRequestException('كمية البند غير صالحة');
+      }
       return {
         id: l.id,
         productId: l.productId,
-        quantity: qty > 0 ? qty : billQty,
+        quantity: resolved.invoiceQty,
         unitPrice: l.unitPrice,
         unitCost: costOf(l.productId),
         discount: l.discount || 0,
-        total: billQty * l.unitPrice - (l.discount || 0),
-        netWeight: weight > 0 ? weight : null,
-        stockQty: billQty,
+        total: resolved.invoiceQty * l.unitPrice - (l.discount || 0),
+        invoiceUnit: resolved.invoiceUnit,
+        unitFactor: resolved.unitFactor,
+        netWeight: resolved.legacyWeight ? resolved.stockQty : null,
+        stockQty: resolved.stockQty,
       };
     });
     const subtotal = lines.reduce((s, l) => s + l.total, 0);
@@ -343,7 +398,7 @@ export class SalesService {
         id,
         inv,
         data,
-        lines.map(({ stockQty: _s, ...line }) => line),
+        lines,
         parts,
         subtotal,
         discount,
@@ -457,8 +512,46 @@ export class SalesService {
     const newNumbers: string[] = [];
     for (let i = 0; i < replacements; i++) newNumbers.push(await this.sequence.next('receipts', 'RCP'));
 
+    const oldStockLines = (inv.lines as Array<{
+      productId: string;
+      quantity: number;
+      unitCost: number;
+      unitFactor?: number | null;
+      netWeight?: number | null;
+      invoiceUnit?: string | null;
+    }>).map((line) => ({
+      productId: line.productId,
+      quantity: resolveTradeQty({
+        quantity: line.quantity,
+        unitFactor: line.unitFactor,
+        netWeight: line.netWeight,
+        invoiceUnit: line.invoiceUnit,
+      }).stockQty,
+      unitCost: line.unitCost,
+    }));
+    const newStockLines = (lines as Array<{
+      productId: string;
+      unitCost: number;
+      stockQty?: number;
+      quantity: number;
+      unitFactor?: number;
+      netWeight?: number | null;
+      invoiceUnit?: string | null;
+    }>).map((line) => ({
+      productId: line.productId,
+      quantity:
+        line.stockQty ??
+        resolveTradeQty({
+          quantity: line.quantity,
+          unitFactor: line.unitFactor,
+          netWeight: line.netWeight,
+          invoiceUnit: line.invoiceUnit,
+        }).stockQty,
+      unitCost: line.unitCost,
+    }));
+
     return this.prisma.$transaction(async (tx) => {
-      await this.applySaleStockDelta(tx, inv.warehouseId, data.warehouseId, inv.number, inv.lines, lines);
+      await this.applySaleStockDelta(tx, inv.warehouseId, data.warehouseId, inv.number, oldStockLines, newStockLines);
       const paidAmount = await syncSaleTenders(tx, {
         existing: inv.receipts,
         parts,
@@ -488,7 +581,18 @@ export class SalesService {
       for (const old of inv.lines) {
         if (!kept.has(old.id)) await tx.salesInvoiceLine.delete({ where: { id: old.id } });
       }
-      for (const line of lines) {
+      for (const line of lines as Array<{
+        id?: string;
+        productId: string;
+        quantity: number;
+        unitPrice: number;
+        unitCost: number;
+        discount: number;
+        total: number;
+        invoiceUnit?: string | null;
+        unitFactor?: number;
+        netWeight?: number | null;
+      }>) {
         const previous = line.id ? inv.lines.find((row) => row.id === line.id) : undefined;
         const unitCost = previous && previous.productId === line.productId ? previous.unitCost : line.unitCost;
         const row = {
@@ -498,6 +602,9 @@ export class SalesService {
           unitCost,
           discount: line.discount,
           total: line.total,
+          invoiceUnit: line.invoiceUnit ?? null,
+          unitFactor: line.unitFactor ?? 1,
+          netWeight: line.netWeight ?? null,
         };
         if (previous) await tx.salesInvoiceLine.update({ where: { id: previous.id }, data: row });
         else await tx.salesInvoiceLine.create({ data: { invoiceId: id, ...row } });

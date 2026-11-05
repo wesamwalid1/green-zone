@@ -5,6 +5,7 @@ import { SequenceService } from '../common/sequence.service';
 import { normalizeTenders, postSupplierTenders, reversePurchaseMoney, sumTenders, syncPurchaseTenders, TenderInput } from '../cash/tenders';
 import { assertPeriodsOpen } from '../settings/period-lock';
 import { assertPaidFits, lineAmount, paidAmountOf, postStockLine, statusFromPayment, sumLineTotals, taxFromPercent } from '../common/invoice-post';
+import { baseUnitPrice, resolveTradeQty } from '../common/trade-units';
 import { applySupplierPrepaid } from '../common/supplier-credit';
 import { claimRequest, finishRequest, releaseRequest } from '../common/idempotency';
 import { pageResult, readPage } from '../common/paging';
@@ -101,7 +102,17 @@ export class PurchasesService {
     confirm?: boolean;
     createdById?: string;
     idempotencyKey?: string;
-    lines: { productId: string; quantity: number; unitCost: number; discount?: number; netWeight?: number; batchNumber?: string; expiryDate?: string }[];
+    lines: {
+      productId: string;
+      quantity: number;
+      unitCost: number;
+      discount?: number;
+      invoiceUnit?: string;
+      unitFactor?: number;
+      netWeight?: number;
+      batchNumber?: string;
+      expiryDate?: string;
+    }[];
   }) {
     if (!data.lines?.length) throw new BadRequestException('أضف بنوداً للفاتورة');
     const claim = await claimRequest(this.prisma, { key: data.idempotencyKey, scope: 'purchases', userId: data.createdById });
@@ -127,26 +138,44 @@ export class PurchasesService {
     payments?: TenderInput[];
     confirm?: boolean;
     createdById?: string;
-    lines: { productId: string; quantity: number; unitCost: number; discount?: number; netWeight?: number; batchNumber?: string; expiryDate?: string }[];
+    lines: {
+      productId: string;
+      quantity: number;
+      unitCost: number;
+      discount?: number;
+      invoiceUnit?: string;
+      unitFactor?: number;
+      netWeight?: number;
+      batchNumber?: string;
+      expiryDate?: string;
+    }[];
   }) {
     await assertPeriodsOpen(this.prisma, data.invoiceDate || new Date());
     const number = await this.sequence.next('purchases', 'PUR');
     const parts = normalizeTenders(data.payments);
     const lines = data.lines.map((l) => {
-      const qty = Number(l.quantity) || 0;
-      const weight = l.netWeight != null && l.netWeight !== undefined ? Number(l.netWeight) : 0;
-      // الوزن أساس السعر والمخزون — العدد للعرض فقط لو الوزن موجود
-      const billQty = weight > 0 ? weight : qty;
+      const resolved = resolveTradeQty({
+        quantity: l.quantity,
+        unitFactor: l.unitFactor,
+        netWeight: l.netWeight,
+        invoiceUnit: l.invoiceUnit,
+      });
+      if (!(resolved.invoiceQty > 0) || !(resolved.stockQty > 0)) {
+        throw new BadRequestException('كمية البند غير صالحة');
+      }
       return {
         productId: l.productId,
-        quantity: qty > 0 ? qty : billQty,
+        quantity: resolved.invoiceQty,
         unitCost: l.unitCost,
         discount: 0,
-        total: lineAmount(billQty, l.unitCost, 0),
-        netWeight: weight > 0 ? weight : null,
+        total: lineAmount(resolved.invoiceQty, l.unitCost, 0),
+        invoiceUnit: resolved.invoiceUnit,
+        unitFactor: resolved.unitFactor,
+        netWeight: resolved.legacyWeight ? resolved.stockQty : null,
         batchNumber: null as string | null,
         expiryDate: null as Date | null,
-        stockQty: billQty,
+        stockQty: resolved.stockQty,
+        stockUnitCost: baseUnitPrice(l.unitCost, resolved.unitFactor),
       };
     });
     const subtotal = sumLineTotals(lines);
@@ -170,15 +199,19 @@ export class PurchasesService {
             warehouseId: data.warehouseId,
             productId: line.productId,
             quantity: line.stockQty,
-            unitCost: line.unitCost,
+            unitCost: line.stockUnitCost,
             type: StockMovementType.PURCHASE,
             reference: number,
             direction: 'in',
-            note: line.netWeight != null ? `وزن صافي: ${line.netWeight}` : null,
+            note: line.invoiceUnit
+              ? `${line.quantity} ${line.invoiceUnit}`
+              : line.netWeight != null
+                ? `وزن صافي: ${line.netWeight}`
+                : null,
           });
           await tx.product.update({
             where: { id: line.productId },
-            data: { costPrice: line.unitCost },
+            data: { costPrice: line.stockUnitCost },
           });
         }
       }
@@ -199,7 +232,7 @@ export class PurchasesService {
           notes: data.notes,
           createdById: data.createdById,
           lines: {
-            create: lines.map(({ stockQty: _s, ...line }) => line),
+            create: lines.map(({ stockQty: _s, stockUnitCost: _c, ...line }) => line),
           },
         },
         include: { supplier: true, warehouse: true, lines: { include: { product: true } } },
@@ -249,21 +282,30 @@ export class PurchasesService {
     for (let i = 0; i < parts.length; i++) paymentNumbers.push(await this.sequence.next('payments', 'PAY'));
     return this.prisma.$transaction(async (tx) => {
       for (const line of inv.lines) {
-        const stockQty = line.netWeight != null && line.netWeight > 0 ? line.netWeight : line.quantity;
+        const resolved = resolveTradeQty({
+          quantity: line.quantity,
+          unitFactor: line.unitFactor,
+          netWeight: line.netWeight,
+          invoiceUnit: line.invoiceUnit,
+        });
+        const stockUnitCost = baseUnitPrice(line.unitCost, resolved.unitFactor);
         await postStockLine(tx, {
           warehouseId: inv.warehouseId,
           productId: line.productId,
-          quantity: stockQty,
-          unitCost: line.unitCost,
+          quantity: resolved.stockQty,
+          unitCost: stockUnitCost,
           type: StockMovementType.PURCHASE,
           reference: inv.number,
           direction: 'in',
-          note: line.netWeight != null ? `وزن صافي: ${line.netWeight}` : null,
+          note: line.invoiceUnit
+            ? `${line.quantity} ${line.invoiceUnit}`
+            : line.netWeight != null
+              ? `وزن صافي: ${line.netWeight}`
+              : null,
         });
-        // تكلفة الصنف = آخر سعر شراء من الفاتورة (سعر البيع لا يُمس)
         await tx.product.update({
           where: { id: line.productId },
-          data: { costPrice: line.unitCost },
+          data: { costPrice: stockUnitCost },
         });
       }
       if (parts.length) {
@@ -305,7 +347,18 @@ export class PurchasesService {
     paidAmount?: number;
     payments?: TenderInput[];
     confirm?: boolean;
-    lines: { id?: string; productId: string; quantity: number; unitCost: number; discount?: number; netWeight?: number; batchNumber?: string; expiryDate?: string }[];
+    lines: {
+      id?: string;
+      productId: string;
+      quantity: number;
+      unitCost: number;
+      discount?: number;
+      invoiceUnit?: string;
+      unitFactor?: number;
+      netWeight?: number;
+      batchNumber?: string;
+      expiryDate?: string;
+    }[];
   }) {
     const inv = await this.prisma.purchaseInvoice.findUnique({
       where: { id },
@@ -317,20 +370,29 @@ export class PurchasesService {
     if (!data.lines?.length) throw new BadRequestException('أضف بنوداً للفاتورة');
 
     const lines = data.lines.map((l) => {
-      const qty = Number(l.quantity) || 0;
-      const weight = l.netWeight != null && l.netWeight !== undefined ? Number(l.netWeight) : 0;
-      const billQty = weight > 0 ? weight : qty;
+      const resolved = resolveTradeQty({
+        quantity: l.quantity,
+        unitFactor: l.unitFactor,
+        netWeight: l.netWeight,
+        invoiceUnit: l.invoiceUnit,
+      });
+      if (!(resolved.invoiceQty > 0) || !(resolved.stockQty > 0)) {
+        throw new BadRequestException('كمية البند غير صالحة');
+      }
       return {
         id: l.id,
         productId: l.productId,
-        quantity: qty > 0 ? qty : billQty,
+        quantity: resolved.invoiceQty,
         unitCost: l.unitCost,
         discount: 0,
-        total: billQty * l.unitCost,
-        netWeight: weight > 0 ? weight : null,
+        total: resolved.invoiceQty * l.unitCost,
+        invoiceUnit: resolved.invoiceUnit,
+        unitFactor: resolved.unitFactor,
+        netWeight: resolved.legacyWeight ? resolved.stockQty : null,
         batchNumber: null as string | null,
         expiryDate: null as Date | null,
-        stockQty: billQty,
+        stockQty: resolved.stockQty,
+        stockUnitCost: baseUnitPrice(l.unitCost, resolved.unitFactor),
       };
     });
     const subtotal = lines.reduce((s, l) => s + l.total, 0);
@@ -349,7 +411,7 @@ export class PurchasesService {
         id,
         inv,
         data,
-        lines.map(({ stockQty: _s, ...line }) => line),
+        lines.map(({ stockQty: _s, stockUnitCost: _c, ...line }) => ({ ...line, stockQty: _s, stockUnitCost: _c })),
         parts,
         subtotal,
         discount,
@@ -379,12 +441,12 @@ export class PurchasesService {
               productId: line.productId,
               type: StockMovementType.PURCHASE,
               quantity: line.stockQty,
-              unitCost: line.unitCost,
+              unitCost: line.stockUnitCost,
               reference: inv.number,
-              note: line.netWeight != null ? `وزن صافي: ${line.netWeight}` : null,
+              note: line.invoiceUnit ? `${line.quantity} ${line.invoiceUnit}` : null,
             },
           });
-          await tx.product.update({ where: { id: line.productId }, data: { costPrice: line.unitCost } });
+          await tx.product.update({ where: { id: line.productId }, data: { costPrice: line.stockUnitCost } });
         }
         if (parts.length) {
           await postSupplierTenders(tx, {
@@ -419,7 +481,9 @@ export class PurchasesService {
           paymentMethod: parts.length === 1 ? parts[0].methodId : (parts.length ? '' : inv.paymentMethod),
           notes: data.notes,
           status,
-          lines: { create: lines.map(({ stockQty: _s, ...line }) => ({ ...line, id: undefined })) },
+          lines: {
+            create: lines.map(({ stockQty: _s, stockUnitCost: _c, ...line }) => ({ ...line, id: undefined })),
+          },
         },
         include: { supplier: true, warehouse: true, lines: { include: { product: true } }, payments: true },
       });
@@ -450,11 +514,33 @@ export class PurchasesService {
       total: number;
       paidAmount: number;
       invoiceDate: Date;
-      lines: { id: string; productId: string; quantity: number; unitCost: number }[];
+      lines: {
+        id: string;
+        productId: string;
+        quantity: number;
+        unitCost: number;
+        invoiceUnit?: string | null;
+        unitFactor?: number | null;
+        netWeight?: number | null;
+      }[];
       payments: { id: string; number: string; amount: number; cashAccountId: string | null; paymentMethod: string; referenceNo: string | null }[];
     },
     data: { supplierId: string; warehouseId: string; invoiceDate?: string; notes?: string },
-    lines: { id?: string; productId: string; quantity: number; unitCost: number; discount: number; total: number; netWeight: number | null; batchNumber: string | null; expiryDate: Date | null }[],
+    lines: {
+      id?: string;
+      productId: string;
+      quantity: number;
+      unitCost: number;
+      discount: number;
+      total: number;
+      invoiceUnit: string | null;
+      unitFactor: number;
+      netWeight: number | null;
+      batchNumber: string | null;
+      expiryDate: Date | null;
+      stockQty: number;
+      stockUnitCost: number;
+    }[],
     parts: TenderInput[],
     subtotal: number,
     discount: number,
@@ -468,8 +554,26 @@ export class PurchasesService {
     }).length;
     const newNumbers: string[] = [];
     for (let i = 0; i < replacements; i++) newNumbers.push(await this.sequence.next('payments', 'PAY'));
+    const oldStockLines = inv.lines.map((line) => {
+      const resolved = resolveTradeQty({
+        quantity: line.quantity,
+        unitFactor: line.unitFactor,
+        netWeight: line.netWeight,
+        invoiceUnit: line.invoiceUnit,
+      });
+      return {
+        productId: line.productId,
+        quantity: resolved.stockQty,
+        unitCost: baseUnitPrice(line.unitCost, resolved.unitFactor),
+      };
+    });
+    const newStockLines = lines.map((line) => ({
+      productId: line.productId,
+      quantity: line.stockQty,
+      unitCost: line.stockUnitCost,
+    }));
     return this.prisma.$transaction(async (tx) => {
-      await this.applyPurchaseStockDelta(tx, inv.warehouseId, data.warehouseId, inv.number, inv.lines, lines);
+      await this.applyPurchaseStockDelta(tx, inv.warehouseId, data.warehouseId, inv.number, oldStockLines, newStockLines);
       const paidAmount = await syncPurchaseTenders(tx, {
         existing: inv.payments,
         parts,
@@ -506,14 +610,16 @@ export class PurchasesService {
           unitCost: line.unitCost,
           discount: line.discount,
           total: line.total,
+          invoiceUnit: line.invoiceUnit,
+          unitFactor: line.unitFactor,
           netWeight: line.netWeight,
           batchNumber: line.batchNumber,
           expiryDate: line.expiryDate,
         };
         if (previous) await tx.purchaseInvoiceLine.update({ where: { id: previous.id }, data: row });
         else await tx.purchaseInvoiceLine.create({ data: { invoiceId: id, ...row } });
-        if (!previous || Math.abs(previous.unitCost - line.unitCost) >= 0.009) {
-          await tx.product.update({ where: { id: line.productId }, data: { costPrice: line.unitCost } });
+        if (!previous || Math.abs(previous.unitCost - line.unitCost) >= 0.009 || Math.abs((previous.unitFactor || 1) - line.unitFactor) >= 0.0001) {
+          await tx.product.update({ where: { id: line.productId }, data: { costPrice: line.stockUnitCost } });
         }
       }
       const methods = await tx.payment.findMany({ where: { purchaseInvoiceId: id }, select: { paymentMethod: true } });
@@ -616,6 +722,12 @@ export class PurchasesService {
     return this.prisma.$transaction(async (tx) => {
       if (inv.status !== InvoiceStatus.DRAFT) {
         for (const line of inv.lines) {
+          const stockQty = resolveTradeQty({
+            quantity: line.quantity,
+            unitFactor: line.unitFactor,
+            netWeight: line.netWeight,
+            invoiceUnit: line.invoiceUnit,
+          }).stockQty;
           const bal = await tx.stockBalance.findUnique({
             where: {
               warehouseId_productId: {
@@ -624,12 +736,12 @@ export class PurchasesService {
               },
             },
           });
-          if (!bal || bal.quantity < line.quantity) {
+          if (!bal || bal.quantity < stockQty) {
             throw new BadRequestException('لا يمكن الحذف لأن كمية المخزون أقل من كمية الفاتورة');
           }
           await tx.stockBalance.update({
             where: { id: bal.id },
-            data: { quantity: { decrement: line.quantity } },
+            data: { quantity: { decrement: stockQty } },
           });
         }
         await tx.stockMovement.deleteMany({

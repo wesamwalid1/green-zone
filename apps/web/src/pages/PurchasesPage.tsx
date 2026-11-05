@@ -6,7 +6,7 @@ import { api, formatDate, formatMoney, initialQuery } from '../lib/api';
 import { DueAmount } from '../components/DueAmount';
 import { DocExportBar } from '../components/DocExportBar';
 import { DualPrintCopies } from '../components/DualPrintCopies';
-import { AddLineButton, EditorErrors, EditorSection, InvoiceEditor, LineCard, PriceHint, SummaryRow } from '../components/InvoiceEditor';
+import { AddLineButton, EditorErrors, EditorSection, InvoiceEditor, LineCard, SummaryRow } from '../components/InvoiceEditor';
 import { ProductPicker } from '../components/ProductPicker';
 import { productsForWarehouse } from '../lib/productWarehouse';
 import { TenderEditor, type PayMethodOption, type TenderPart } from '../components/TenderEditor';
@@ -18,14 +18,25 @@ import {
 } from '../components/ui';
 
 type Party = { id: string; name: string };
-type Product = { id: string; name: string; sku: string; costPrice: number; warehouses?: { warehouseId: string }[]; barcode?: string | null };
+type TradeUnit = { name: string; factor: number };
+type Product = {
+  id: string;
+  name: string;
+  sku: string;
+  unit?: string;
+  costPrice: number;
+  warehouses?: { warehouseId: string }[];
+  barcode?: string | null;
+  tradeUnits?: TradeUnit[];
+};
 const emptyPart = (): TenderPart => ({ methodId: '', amount: '' });
 type Line = {
   id?: string;
   productId: string;
   quantity: number | '';
   unitCost: number | '';
-  netWeight: number | '';
+  invoiceUnit: string;
+  unitFactor: number;
 };
 
 type Invoice = {
@@ -45,30 +56,33 @@ type Invoice = {
     productId: string;
     quantity: number;
     discount?: number;
+    invoiceUnit?: string | null;
+    unitFactor?: number | null;
     netWeight?: number | null;
     batchNumber?: string | null;
     expiryDate?: string | null;
     unitCost: number;
     total: number;
-    product: { name: string; sku: string };
+    product: { name: string; sku: string; unit?: string };
   }[];
   payments?: { id: string; paymentMethod: string; amount: number }[];
 };
 
 const emptyLine = (): Line => ({
-  productId: '', quantity: '', unitCost: '', netWeight: '',
+  productId: '', quantity: '', unitCost: '', invoiceUnit: '', unitFactor: 1,
 });
 const num = (v: number | '') => (v === '' ? 0 : v);
-/** الوزن أساس السعر — لو مفيش وزن يتحسب بالعدد */
-function billQty(line: { quantity: number | ''; netWeight: number | '' }) {
-  const qty = num(line.quantity);
-  const weight = num(line.netWeight);
-  if (weight > 0) return weight;
-  if (qty > 0) return qty;
-  return 0;
+function lineTotal(line: { quantity: number | ''; unitCost: number | '' }) {
+  return Math.max(0, num(line.quantity) * num(line.unitCost));
 }
-function lineTotal(line: { quantity: number | ''; netWeight: number | ''; unitCost: number | '' }) {
-  return Math.max(0, billQty(line) * num(line.unitCost));
+function stockQty(line: { quantity: number | ''; unitFactor: number }) {
+  return Math.max(0, num(line.quantity) * (line.unitFactor > 0 ? line.unitFactor : 1));
+}
+function productUnits(product?: Product | null) {
+  if (!product) return [] as { name: string; factor: number }[];
+  const base = product.unit || 'كيلو';
+  const extras = (product.tradeUnits || []).map((u) => ({ name: u.name, factor: u.factor }));
+  return [{ name: base, factor: 1 }, ...extras.filter((u) => u.name !== base)];
 }
 const PURCHASE_VIEW = 'm5azen.purchasesView';
 type PurchaseFilter = 'all' | 'DRAFT' | 'CONFIRMED' | 'PARTIAL' | 'PAID' | 'CANCELLED' | 'due';
@@ -119,7 +133,6 @@ export function PurchasesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [triedSave, setTriedSave] = useState(false);
-  const [priceHints, setPriceHints] = useState<Record<string, { lastSupplier: number | null; lastSale: number | null }>>({});
 
   async function loadLookups() {
     const [s, w, p, m] = await Promise.all([
@@ -146,18 +159,6 @@ export function PurchasesPage() {
   }
 
   useEffect(() => { loadLookups().catch(() => undefined); }, []);
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (form.supplierId) params.set('supplierId', form.supplierId);
-    if (editingId) params.set('excludeInvoiceId', editingId);
-    api<{ productId: string; lastSupplier: number | null; lastSale: number | null }[]>(`/purchases/price-hints?${params}`)
-      .then((rows) => {
-        const map: Record<string, { lastSupplier: number | null; lastSale: number | null }> = {};
-        rows.forEach((row) => { map[row.productId] = row; });
-        setPriceHints(map);
-      })
-      .catch(() => setPriceHints({}));
-  }, [form.supplierId, editingId]);
   useEffect(() => { setListPage(1); }, [search, status, pageSize]);
   useEffect(() => {
     const timer = window.setTimeout(() => { load().catch(() => undefined); }, 200);
@@ -195,7 +196,19 @@ export function PurchasesPage() {
       const next = { ...l, ...patch };
       if (patch.productId) {
         const prod = products.find((p) => p.id === patch.productId);
-        if (prod) next.unitCost = prod.costPrice;
+        if (prod) {
+          const base = prod.unit || 'كيلو';
+          next.invoiceUnit = base;
+          next.unitFactor = 1;
+          next.unitCost = prod.costPrice;
+        }
+      }
+      if (patch.invoiceUnit != null && next.productId) {
+        const prod = products.find((p) => p.id === next.productId);
+        const option = productUnits(prod).find((u) => u.name === patch.invoiceUnit);
+        const factor = option?.factor || 1;
+        next.unitFactor = factor;
+        if (prod) next.unitCost = Math.round(prod.costPrice * factor * 1000) / 1000;
       }
       return next;
     }));
@@ -209,12 +222,12 @@ export function PurchasesPage() {
   const paidNow = form.payments.reduce((sum, part) => sum + num(part.amount), 0);
   const remaining = Math.max(0, grand - paidNow);
   const filledLines = lines.filter((l) => l.productId);
-  const badLine = (l: Line) => !!l.productId && !(billQty(l) > 0);
+  const badLine = (l: Line) => !!l.productId && !(num(l.quantity) > 0 && l.invoiceUnit);
   const formErrors = [
     !form.supplierId && 'اختر المورد',
     !form.warehouseId && 'اختر المخزن',
     !filledLines.length && 'أضف صنفًا واحدًا على الأقل',
-    lines.some(badLine) && 'كل بند لازم فيه كمية (ك) أو وزن صافي',
+    lines.some(badLine) && 'كل بند لازم فيه كمية ووحدة فاتورة',
     paidNow > grand + 0.009 && 'المدفوع أكبر من إجمالي الفاتورة',
     form.confirm && form.payments.some((part) => num(part.amount) > 0 && !part.methodId) && 'اختر طريقة الدفع (خزنة / انستا باي / محفظة / بنك)',
   ].filter(Boolean) as string[];
@@ -240,10 +253,11 @@ export function PurchasesPage() {
           lines: filledLines.map((l) => ({
             id: l.id,
             productId: l.productId,
-            quantity: billQty(l),
+            quantity: num(l.quantity),
             unitCost: num(l.unitCost),
             discount: 0,
-            netWeight: l.netWeight === '' ? undefined : num(l.netWeight),
+            invoiceUnit: l.invoiceUnit,
+            unitFactor: l.unitFactor > 0 ? l.unitFactor : 1,
           })),
         }),
       });
@@ -285,14 +299,17 @@ export function PurchasesPage() {
       confirm: true,
     });
     setLines(inv.lines.map((l) => {
-      const weight = l.netWeight ?? '';
-      const sameAsWeight = typeof weight === 'number' && Math.abs(l.quantity - weight) < 0.0001;
+      const prod = products.find((p) => p.id === l.productId);
+      const factor = l.unitFactor && l.unitFactor > 0
+        ? l.unitFactor
+        : (l.netWeight != null && l.netWeight > 0 && l.quantity > 0 ? l.netWeight / l.quantity : 1);
       return {
         id: l.id,
         productId: l.productId,
-        quantity: sameAsWeight ? '' : l.quantity,
+        quantity: l.quantity,
         unitCost: l.unitCost,
-        netWeight: weight,
+        invoiceUnit: l.invoiceUnit || prod?.unit || l.product.unit || 'كيلو',
+        unitFactor: factor,
       };
     }));
     setView(null);
@@ -482,7 +499,7 @@ export function PurchasesPage() {
       <InvoiceEditor
         open={open}
         title={editingId ? 'تعديل فاتورة شراء' : 'فاتورة شراء جديدة'}
-        subtitle="اكتب الكمية بالكيلو أو الوزن الصافي + سعر الشراء، والمدفوع يظهر المتبقي تلقائيًا"
+        subtitle="اختَر وحدة الفاتورة (كجم / شيكارة / طن…) — التحويل للمخزون يتم تلقائيًا"
         icon={<ShoppingBag size={18} />}
         total={grand}
         onClose={() => { setOpen(false); setEditingId(null); }}
@@ -580,7 +597,7 @@ export function PurchasesPage() {
                 onRemove={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
               >
                 <div className="grid gap-2 sm:grid-cols-12">
-                  <div className="sm:col-span-5">
+                  <div className="sm:col-span-12">
                     <Label>الصنف</Label>
                     <ProductPicker
                       products={productsForWarehouse(products, form.warehouseId, lines.map((line) => line.productId)).map((product) => ({
@@ -595,30 +612,38 @@ export function PurchasesPage() {
                       onChange={(productId) => updateLine(i, { productId })}
                     />
                   </div>
-                  <div className="sm:col-span-7 flex flex-wrap items-end gap-2 text-[11px] text-muted">
-                    <PriceHint label="آخر شراء" value={l.productId ? priceHints[l.productId]?.lastSupplier : null} />
-                    <PriceHint label="آخر بيع" value={l.productId ? priceHints[l.productId]?.lastSale : null} />
-                  </div>
                   <div className="sm:col-span-3">
-                    <Label>ك</Label>
+                    <Label>وحدة الفاتورة</Label>
+                    <Select
+                      value={l.invoiceUnit}
+                      disabled={!l.productId}
+                      onChange={(e) => updateLine(i, { invoiceUnit: e.target.value })}
+                    >
+                      <option value="">اختر الوحدة</option>
+                      {productUnits(products.find((p) => p.id === l.productId)).map((u) => (
+                        <option key={u.name} value={u.name}>
+                          {u.name}{u.factor !== 1 ? ` (= ${u.factor} ${products.find((p) => p.id === l.productId)?.unit || 'كيلو'})` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label>الكمية</Label>
                     <NumberInput value={l.quantity} onValueChange={(v) => updateLine(i, { quantity: v })} />
                   </div>
                   <div className="sm:col-span-3">
-                    <Label>الوزن الصافي</Label>
-                    <NumberInput value={l.netWeight} onValueChange={(v) => updateLine(i, { netWeight: v })} />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <Label>سعر الشراء</Label>
+                    <Label>سعر الوحدة</Label>
                     <NumberInput value={l.unitCost} onValueChange={(v) => updateLine(i, { unitCost: v })} />
                   </div>
-                  <div className="sm:col-span-3">
+                  <div className="sm:col-span-4">
                     <Label>إجمالي البند</Label>
                     <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-extrabold tabular-nums">
                       {formatMoney(lineTotal(l))}
                     </div>
                   </div>
                   <div className="sm:col-span-12 text-[11px] text-muted">
-                    الإجمالي = الوزن × السعر (لو فيه وزن). الكمية بالكيلو.
+                    يُضاف للمخزون: {stockQty(l).toLocaleString('ar-EG')} {products.find((p) => p.id === l.productId)?.unit || 'كيلو'}
+                    {l.unitFactor !== 1 ? ` · معامل التحويل ×${l.unitFactor}` : ''}
                   </div>
                 </div>
               </LineCard>
@@ -659,13 +684,13 @@ export function PurchasesPage() {
                     ['المدفوع', view.paidAmount],
                     ['المتبقي', view.status === 'CANCELLED' ? 0 : view.total - view.paidAmount],
                   ],
-                  lineHeaders: ['الصنف', 'ك', 'الوزن الصافي', 'سعر الشراء', 'الإجمالي'],
+                  lineHeaders: ['الصنف', 'الكمية', 'الوحدة', 'سعر الشراء', 'الإجمالي'],
                   lines: view.lines.map((l) => ({
                     name: l.product.name,
                     quantity: l.quantity,
                     unitPrice: l.unitCost,
                     total: l.total,
-                    extra: [l.netWeight ?? '—'],
+                    extra: [l.invoiceUnit || l.product.unit || '—'],
                   })),
                   totals: [
                     ['الإجمالي', view.total],
@@ -686,8 +711,8 @@ export function PurchasesPage() {
                 <thead>
                   <tr>
                     <Th>الصنف</Th>
-                    <Th>ك</Th>
-                    <Th>وزن صافي</Th>
+                    <Th>الكمية</Th>
+                    <Th>الوحدة</Th>
                     <Th>سعر الشراء</Th>
                     <Th>الإجمالي</Th>
                   </tr>
@@ -696,8 +721,8 @@ export function PurchasesPage() {
                   {view.lines.map((l, i) => (
                     <tr key={i}>
                       <Td>{l.product.name}</Td>
-                      <Td>{l.netWeight != null && Math.abs(l.quantity - l.netWeight) < 0.0001 ? '—' : l.quantity}</Td>
-                      <Td>{l.netWeight ?? '—'}</Td>
+                      <Td>{l.quantity}</Td>
+                      <Td>{l.invoiceUnit || l.product.unit || '—'}</Td>
                       <Td>{formatMoney(l.unitCost)}</Td>
                       <Td>{formatMoney(l.total)}</Td>
                     </tr>

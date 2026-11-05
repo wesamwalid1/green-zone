@@ -225,6 +225,23 @@ model Product {
   mfgIssueLines       MfgIssueLine[]
   mfgStageMaterials   MfgStageMaterial[]
   customerProdOrderLines CustomerProdOrderLine[]
+  /// وحدات تعامل إضافية (شيكارة/طن…) بمعامل تحويل لوحدة المخزون
+  tradeUnits          ProductTradeUnit[]
+}
+
+/// وحدة تعامل للصنف: 1 شيكارة = 50 كجم مثلاً
+model ProductTradeUnit {
+  id        String @id @default(cuid())
+  productId String
+  name      String
+  /// كم وحدة مخزون داخل وحدة التعامل
+  factor    Float
+  sortOrder Int    @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, name])
+  @@index([productId])
 }
 
 /// أصناف مربوطة بمخزن معيّن. لو الصنف مفيهوش صفوف هنا يبقى متاح لكل المخازن.
@@ -489,13 +506,17 @@ model SalesInvoiceLine {
   id        String @id @default(cuid())
   invoiceId String
   productId String
-  /// العدد (للعرض فقط — لا يدخل في حساب الإجمالي لو فيه وزن)
+  /// كمية وحدة الفاتورة (شيكارة / كجم / …)
   quantity  Float
   unitPrice Float
   unitCost  Float  @default(0)
   discount  Float  @default(0)
   total     Float
-  /// الوزن الصافي — هو أساس التسعير والمخزون إن وُجد
+  /// وحدة التعامل على الفاتورة
+  invoiceUnit String?
+  /// معامل التحويل لوحدة المخزون وقت الفاتورة
+  unitFactor  Float  @default(1)
+  /// توافق قديم: الوزن الصافي لو استُخدم بدل وحدة التحويل
   netWeight Float?
 
   invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -536,11 +557,14 @@ model PurchaseInvoiceLine {
   id          String    @id @default(cuid())
   invoiceId   String
   productId   String
+  /// كمية وحدة الفاتورة
   quantity    Float
   unitCost    Float
   discount    Float     @default(0)
   total       Float
-  /// الوزن الصافي للبند (اختياري)
+  invoiceUnit String?
+  unitFactor  Float     @default(1)
+  /// توافق قديم
   netWeight   Float?
   /// بيانات الشحنة — تختلف مع كل شراء (اختياري)
   batchNumber String?

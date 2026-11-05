@@ -22,16 +22,26 @@ type Product = {
   id: string;
   name: string;
   sku: string;
+  unit?: string;
   salePrice: number;
   wholesalePrice?: number;
   barcode?: string | null;
   imageFile?: string | null;
   warehouses?: { warehouseId: string }[];
+  tradeUnits?: { name: string; factor: number }[];
 };
 type StockRow = { productId: string; quantity: number; product: Product };
 const WALK_IN_NAME = 'عميل سريع';
 type Account = { id: string; name: string };
-type Line = { id?: string; productId: string; quantity: number | ''; unitPrice: number | ''; discount: number | ''; netWeight: number | '' };
+type Line = {
+  id?: string;
+  productId: string;
+  quantity: number | '';
+  unitPrice: number | '';
+  discount: number | '';
+  invoiceUnit: string;
+  unitFactor: number;
+};
 
 type Invoice = {
   id: string;
@@ -47,21 +57,34 @@ type Invoice = {
   taxRate?: number;
   customer: { id: string; name: string };
   warehouse: { id: string; name: string };
-  lines: { id: string; productId: string; quantity: number; unitPrice: number; discount?: number; total: number; netWeight?: number | null; product: { name: string; sku: string } }[];
+  lines: {
+    id: string;
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    discount?: number;
+    total: number;
+    invoiceUnit?: string | null;
+    unitFactor?: number | null;
+    netWeight?: number | null;
+    product: { name: string; sku: string; unit?: string };
+  }[];
   receipts?: { id: string; number: string; amount: number; paymentMethod: string; receivedAt: string; note?: string | null }[];
 };
 
-const emptyLine = (): Line => ({ productId: '', quantity: '', unitPrice: '', discount: '', netWeight: '' });
+const emptyLine = (): Line => ({ productId: '', quantity: '', unitPrice: '', discount: '', invoiceUnit: '', unitFactor: 1 });
 const num = (v: number | '') => (v === '' ? 0 : v);
-/** الوزن أساس السعر — العدد للعرض فقط لو فيه وزن */
-function billQty(line: { quantity: number | ''; netWeight?: number | '' }) {
-  const qty = num(line.quantity);
-  const weight = num(line.netWeight ?? '');
-  if (weight > 0) return weight;
-  return qty;
-}
 function saleLineTotal(line: Line) {
-  return Math.max(0, billQty(line) * num(line.unitPrice) - num(line.discount));
+  return Math.max(0, num(line.quantity) * num(line.unitPrice) - num(line.discount));
+}
+function saleStockQty(line: { quantity: number | ''; unitFactor: number }) {
+  return Math.max(0, num(line.quantity) * (line.unitFactor > 0 ? line.unitFactor : 1));
+}
+function saleProductUnits(product?: Product | null) {
+  if (!product) return [] as { name: string; factor: number }[];
+  const base = product.unit || 'كيلو';
+  const extras = (product.tradeUnits || []).map((u) => ({ name: u.name, factor: u.factor }));
+  return [{ name: base, factor: 1 }, ...extras.filter((u) => u.name !== base)];
 }
 const emptyPart = (): TenderPart => ({ methodId: '', amount: '' });
 
@@ -315,7 +338,18 @@ export function SalesPage() {
       const next = { ...l, ...patch };
       if (patch.productId) {
         const prod = products.find((p) => p.id === patch.productId);
-        if (prod) next.unitPrice = priceFor(prod);
+        if (prod) {
+          next.invoiceUnit = prod.unit || 'كيلو';
+          next.unitFactor = 1;
+          next.unitPrice = priceFor(prod);
+        }
+      }
+      if (patch.invoiceUnit != null && next.productId) {
+        const prod = products.find((p) => p.id === next.productId);
+        const option = saleProductUnits(prod).find((u) => u.name === patch.invoiceUnit);
+        const factor = option?.factor || 1;
+        next.unitFactor = factor;
+        if (prod) next.unitPrice = Math.round(priceFor(prod) * factor * 1000) / 1000;
       }
       return next;
     }));
@@ -329,6 +363,8 @@ export function SalesPage() {
         return {
           ...l,
           productId,
+          invoiceUnit: prod?.unit || 'كيلو',
+          unitFactor: 1,
           unitPrice: prod ? priceFor(prod) : l.unitPrice,
           quantity: l.quantity === '' ? 1 : l.quantity,
         };
@@ -347,8 +383,8 @@ export function SalesPage() {
   const paidNow = form.payments.reduce((sum, part) => sum + num(part.amount), 0);
   const remaining = Math.max(0, grand - paidNow);
   const filledLines = lines.filter((l) => l.productId);
-  const badLine = (l: Line) => !!l.productId && !(billQty(l) > 0);
-  const overStock = lines.some((l) => l.productId && billQty(l) > availableQty(l.productId, form.warehouseId) + 0.0001);
+  const badLine = (l: Line) => !!l.productId && !(num(l.quantity) > 0 && l.invoiceUnit);
+  const overStock = lines.some((l) => l.productId && saleStockQty(l) > availableQty(l.productId, form.warehouseId) + 0.0001);
   const formErrors = [
     form.customerName.trim().length < 2 && 'اكتب اسم العميل',
     !form.warehouseId && 'اختر المخزن',
@@ -404,7 +440,14 @@ export function SalesPage() {
       if (idx >= 0) {
         return prev.map((l, i) => i === idx ? { ...l, quantity: num(l.quantity) + 1 } : l);
       }
-      return [...prev, { productId: p.id, quantity: 1, unitPrice: priceFor(p, posForm.customerName), discount: '', netWeight: '' }];
+      return [...prev, {
+        productId: p.id,
+        quantity: 1,
+        unitPrice: priceFor(p, posForm.customerName),
+        discount: '',
+        invoiceUnit: p.unit || 'كيلو',
+        unitFactor: 1,
+      }];
     });
   }
 
@@ -442,7 +485,8 @@ export function SalesPage() {
         quantity: num(l.quantity),
         unitPrice: num(l.unitPrice),
         discount: num(l.discount),
-        netWeight: l.netWeight === '' ? undefined : num(l.netWeight),
+        invoiceUnit: l.invoiceUnit,
+        unitFactor: l.unitFactor > 0 ? l.unitFactor : 1,
       })),
     };
       if (!editingId && !requestKey.current) requestKey.current = crypto.randomUUID();
@@ -498,7 +542,12 @@ export function SalesPage() {
     setTriedSave(false);
     const credit: Record<string, number> = {};
     if (inv.status !== 'DRAFT') {
-      inv.lines.forEach((l) => { credit[l.productId] = (credit[l.productId] || 0) + l.quantity; });
+      inv.lines.forEach((l) => {
+        const factor = l.unitFactor && l.unitFactor > 0
+          ? l.unitFactor
+          : (l.netWeight != null && l.netWeight > 0 && l.quantity > 0 ? l.netWeight / l.quantity : 1);
+        credit[l.productId] = (credit[l.productId] || 0) + l.quantity * factor;
+      });
     }
     setEditCredit({ warehouseId: inv.warehouse.id, qty: credit, posted: inv.status !== 'DRAFT' });
     setForm({
@@ -512,14 +561,21 @@ export function SalesPage() {
       notes: inv.notes || '',
       confirm: true,
     });
-    setLines(inv.lines.map((l) => ({
-      id: l.id,
-      productId: l.productId,
-      quantity: l.quantity,
-      unitPrice: l.unitPrice,
-      discount: l.discount || '',
-      netWeight: l.netWeight ?? '',
-    })));
+    setLines(inv.lines.map((l) => {
+      const prod = products.find((p) => p.id === l.productId);
+      const factor = l.unitFactor && l.unitFactor > 0
+        ? l.unitFactor
+        : (l.netWeight != null && l.netWeight > 0 && l.quantity > 0 ? l.netWeight / l.quantity : 1);
+      return {
+        id: l.id,
+        productId: l.productId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        discount: l.discount || '',
+        invoiceUnit: l.invoiceUnit || prod?.unit || l.product.unit || 'كيلو',
+        unitFactor: factor,
+      };
+    }));
     setView(null);
     setOpen(true);
   }
@@ -599,7 +655,7 @@ export function SalesPage() {
       toast.error('اختر المخزن');
       return;
     }
-    if (posCart.some((l) => l.productId && num(l.quantity) > availableQty(l.productId, posForm.warehouseId) + 0.0001)) {
+    if (posCart.some((l) => l.productId && saleStockQty(l) > availableQty(l.productId, posForm.warehouseId) + 0.0001)) {
       toast.error('الكمية أكبر من المتاح في المخزن');
       return;
     }
@@ -622,6 +678,8 @@ export function SalesPage() {
           quantity: num(l.quantity),
           unitPrice: num(l.unitPrice),
           discount: 0,
+          invoiceUnit: l.invoiceUnit || 'كيلو',
+          unitFactor: l.unitFactor > 0 ? l.unitFactor : 1,
         })),
       }),
     });
@@ -961,13 +1019,24 @@ export function SalesPage() {
                   <div className="sm:col-span-3">
                     <PriceHint label="آخر سعر لهذا العميل" value={l.productId ? priceHints[l.productId]?.lastCustomer : null} />
                   </div>
-                  <div className="sm:col-span-2">
-                    <Label>ك</Label>
-                    <NumberInput value={l.quantity} onValueChange={(v) => updateLine(i, { quantity: v })} />
+                  <div className="sm:col-span-3">
+                    <Label>وحدة الفاتورة</Label>
+                    <Select
+                      value={l.invoiceUnit}
+                      disabled={!l.productId}
+                      onChange={(e) => updateLine(i, { invoiceUnit: e.target.value })}
+                    >
+                      <option value="">اختر الوحدة</option>
+                      {saleProductUnits(products.find((p) => p.id === l.productId)).map((u) => (
+                        <option key={u.name} value={u.name}>
+                          {u.name}{u.factor !== 1 ? ` (= ${u.factor} ${products.find((p) => p.id === l.productId)?.unit || 'كيلو'})` : ''}
+                        </option>
+                      ))}
+                    </Select>
                   </div>
                   <div className="sm:col-span-2">
-                    <Label>الوزن</Label>
-                    <NumberInput value={l.netWeight} onValueChange={(v) => updateLine(i, { netWeight: v })} />
+                    <Label>الكمية</Label>
+                    <NumberInput value={l.quantity} onValueChange={(v) => updateLine(i, { quantity: v })} />
                   </div>
                   <div className="sm:col-span-2">
                     <Label>سعر البيع</Label>
@@ -977,8 +1046,8 @@ export function SalesPage() {
                     <Label>خصم البند</Label>
                     <NumberInput value={l.discount} onValueChange={(v) => updateLine(i, { discount: v })} />
                   </div>
-                  <div className="sm:col-span-4 text-xs text-muted self-end pb-2">
-                    الإجمالي = الوزن × السعر (والكمية بالكيلو)
+                  <div className="sm:col-span-3 text-xs text-muted self-end pb-2">
+                    يخصم من المخزون: {saleStockQty(l).toLocaleString('ar-EG')} {products.find((p) => p.id === l.productId)?.unit || 'كيلو'}
                   </div>
                 </div>
               </LineCard>

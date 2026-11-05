@@ -33,6 +33,11 @@ class UpdateProductFieldDto {
   @IsOptional() @IsInt() sortOrder?: number;
 }
 
+class TradeUnitDto {
+  @IsString() name!: string;
+  @IsNumber() factor!: number;
+}
+
 class ProductDto {
   @IsString() sku!: string;
   @IsString() name!: string;
@@ -52,6 +57,8 @@ class ProductDto {
   fieldValues?: FieldValueDto[];
   @IsOptional() @IsArray() @IsString({ each: true })
   warehouseIds?: string[];
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => TradeUnitDto)
+  tradeUnits?: TradeUnitDto[];
 }
 
 class UpdateProductDto {
@@ -73,6 +80,8 @@ class UpdateProductDto {
   fieldValues?: FieldValueDto[];
   @IsOptional() @IsArray() @IsString({ each: true })
   warehouseIds?: string[];
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => TradeUnitDto)
+  tradeUnits?: TradeUnitDto[];
 }
 
 class ImportRowDto {

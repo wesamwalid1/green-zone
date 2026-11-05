@@ -116,7 +116,41 @@ export class ProductsService {
       fieldValues: { include: { field: true } },
       stockBalances: { include: { warehouse: true } },
       warehouses: { include: { warehouse: true } },
+      tradeUnits: { orderBy: { sortOrder: 'asc' as const } },
     };
+  }
+
+  private normalizeTradeUnits(
+    units: { name: string; factor: number }[] | undefined,
+    baseUnit: string,
+  ) {
+    if (units === undefined) return undefined;
+    const cleaned: { name: string; factor: number; sortOrder: number }[] = [];
+    const seen = new Set<string>();
+    units.forEach((row, index) => {
+      const name = (row.name || '').trim();
+      const factor = Number(row.factor) || 0;
+      if (!name) return;
+      if (name === baseUnit) return;
+      if (!(factor > 0)) throw new BadRequestException(`معامل التحويل لوحدة ${name} غير صالح`);
+      const key = name.toLowerCase();
+      if (seen.has(key)) throw new BadRequestException(`وحدة التحويل مكررة: ${name}`);
+      seen.add(key);
+      cleaned.push({ name, factor, sortOrder: index });
+    });
+    return cleaned;
+  }
+
+  private async syncTradeUnits(
+    productId: string,
+    units: { name: string; factor: number; sortOrder: number }[] | undefined,
+  ) {
+    if (units === undefined) return;
+    await this.prisma.productTradeUnit.deleteMany({ where: { productId } });
+    if (!units.length) return;
+    await this.prisma.productTradeUnit.createMany({
+      data: units.map((row) => ({ ...row, productId })),
+    });
   }
 
   private warehouseScope(warehouseId?: string, warehouseIds?: string[] | null) {
@@ -233,8 +267,9 @@ export class ProductsService {
     packWeight?: number | null;
     fieldValues?: { fieldId: string; value: string }[];
     warehouseIds?: string[];
+    tradeUnits?: { name: string; factor: number }[];
   }) {
-    const { fieldValues, warehouseIds, ...rest } = data;
+    const { fieldValues, warehouseIds, tradeUnits, ...rest } = data;
     const sku = rest.sku?.trim() || '';
     if (!sku) throw new BadRequestException('كود الصنف مطلوب');
     const exists = await this.prisma.product.findUnique({ where: { sku } });
@@ -244,6 +279,8 @@ export class ProductsService {
     rest.categoryId = rest.categoryId || null;
     rest.packUnit = rest.packUnit?.trim() || 'بكرة';
     rest.unit = await this.ensureUnit(rest.unit || 'كيلو');
+    const normalizedUnits = this.normalizeTradeUnits(tradeUnits, rest.unit);
+    for (const row of normalizedUnits || []) await this.ensureUnit(row.name);
     const cleaned = (fieldValues || []).filter((fv) => fv.value?.trim());
     const uniqueWarehouses = [...new Set((warehouseIds || []).map((id) => id.trim()).filter(Boolean))];
     return this.prisma.product.create({
@@ -254,6 +291,7 @@ export class ProductsService {
         warehouses: uniqueWarehouses.length
           ? { create: uniqueWarehouses.map((warehouseId) => ({ warehouseId })) }
           : undefined,
+        tradeUnits: normalizedUnits?.length ? { create: normalizedUnits } : undefined,
       },
       include: this.productInclude(),
     });
@@ -278,9 +316,10 @@ export class ProductsService {
       packWeight?: number | null;
       fieldValues?: { fieldId: string; value: string }[];
       warehouseIds?: string[];
+      tradeUnits?: { name: string; factor: number }[];
     },
   ) {
-    const { fieldValues, warehouseIds, ...rest } = data;
+    const { fieldValues, warehouseIds, tradeUnits, ...rest } = data;
     if (rest.barcode !== undefined) rest.barcode = rest.barcode?.trim() || null;
     if (rest.brand !== undefined) rest.brand = rest.brand?.trim() || null;
     if (rest.categoryId !== undefined) rest.categoryId = rest.categoryId || null;
@@ -303,6 +342,14 @@ export class ProductsService {
       }
     }
     await this.syncWarehouses(id, warehouseIds);
+    const existing = await this.prisma.product.findUnique({ where: { id }, select: { unit: true } });
+    if (!existing) throw new NotFoundException('الصنف غير موجود');
+    const baseUnit = rest.unit || existing.unit;
+    const normalizedUnits = this.normalizeTradeUnits(tradeUnits, baseUnit);
+    if (normalizedUnits) {
+      for (const row of normalizedUnits) await this.ensureUnit(row.name);
+      await this.syncTradeUnits(id, normalizedUnits);
+    }
     return this.prisma.product.update({
       where: { id },
       data: rest,

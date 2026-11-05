@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Barcode, Boxes, Coins, Columns3, Package, Pencil, Plus, Tag, TrendingDown, TriangleAlert, Upload, Warehouse } from 'lucide-react';
+import { Barcode, Boxes, Coins, Columns3, Package, Pencil, Plus, Tag, Trash2, TrendingDown, TriangleAlert, Upload, Warehouse } from 'lucide-react';
 import { loadExcel } from '../lib/excel';
 import { api, formatMoney, getApiBase, initialQuery, productImageUrl } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -32,6 +32,7 @@ type CustomField = {
   isRequired: boolean;
 };
 
+type TradeUnit = { id?: string; name: string; factor: number };
 type Product = {
   id: string;
   sku: string;
@@ -52,6 +53,7 @@ type Product = {
   stockBalances: { quantity: number; warehouse: { name: string } }[];
   warehouses?: { warehouseId: string; warehouse?: { id: string; name: string } }[];
   category?: { id: string; name: string } | null;
+  tradeUnits?: TradeUnit[];
 };
 
 const DRAFT_KEY = 'm5azen.productDraft';
@@ -71,6 +73,7 @@ const emptyCreate = {
   packSize: '' as number | '',
   packWeight: '' as number | '',
   warehouseIds: [] as string[],
+  tradeUnits: [] as { name: string; factor: number | '' }[],
 };
 
 type ProductForm = typeof emptyCreate;
@@ -181,6 +184,63 @@ function ProductFormWizard({
             >
               <Plus size={16} /> إضافة وحدة
             </Button>
+          </div>
+          <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-bold">وحدات التحويل</div>
+                <div className="text-[11px] text-muted">مثال: شيكارة = 50 {form.unit || 'كيلو'} — اختياري حسب المورد</div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setForm({ ...form, tradeUnits: [...form.tradeUnits, { name: '', factor: '' }] })}
+              >
+                <Plus size={14} /> وحدة
+              </Button>
+            </div>
+            {form.tradeUnits.length === 0 ? (
+              <div className="text-xs text-muted">لو المورد بيبيع بالكجم مباشرة، سيّب القائمة فاضية.</div>
+            ) : (
+              form.tradeUnits.map((row, index) => (
+                <div key={index} className="grid gap-2 sm:grid-cols-12">
+                  <div className="sm:col-span-5">
+                    <Select
+                      value={row.name}
+                      onChange={(event) => {
+                        const next = form.tradeUnits.map((item, i) => (i === index ? { ...item, name: event.target.value } : item));
+                        setForm({ ...form, tradeUnits: next });
+                      }}
+                    >
+                      <option value="">وحدة التعامل</option>
+                      {units.filter((u) => u !== form.unit).map((unit) => (
+                        <option key={unit} value={unit}>{unit}</option>
+                      ))}
+                      {row.name && !units.includes(row.name) && <option value={row.name}>{row.name}</option>}
+                    </Select>
+                  </div>
+                  <div className="sm:col-span-5">
+                    <NumberInput
+                      value={row.factor}
+                      onValueChange={(value) => {
+                        const next = form.tradeUnits.map((item, i) => (i === index ? { ...item, factor: value } : item));
+                        setForm({ ...form, tradeUnits: next });
+                      }}
+                      placeholder={`كم ${form.unit || 'كيلو'}؟`}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button
+                      type="button"
+                      className="grid h-10 w-full place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      onClick={() => setForm({ ...form, tradeUnits: form.tradeUnits.filter((_, i) => i !== index) })}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
           <Field label="الباركود" icon={<Barcode size={16} />} error={issues.errors.barcode}>
             <Input value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} />
@@ -422,6 +482,9 @@ export function ProductsPage() {
           packSize: 1,
           packWeight: null,
           warehouseIds: createForm.warehouseIds,
+          tradeUnits: createForm.tradeUnits
+            .filter((row) => row.name.trim() && Number(row.factor) > 0)
+            .map((row) => ({ name: row.name.trim(), factor: Number(row.factor) })),
           fieldValues: fieldPayload(createFieldValues),
         }),
       });
@@ -454,6 +517,7 @@ export function ProductsPage() {
       packSize: '',
       packWeight: '',
       warehouseIds: (p.warehouses || []).map((row) => row.warehouseId),
+      tradeUnits: (p.tradeUnits || []).map((row) => ({ name: row.name, factor: row.factor })),
     });
     const map: Record<string, string> = {};
     for (const fv of p.fieldValues) map[fv.fieldId] = fv.value;
@@ -482,6 +546,9 @@ export function ProductsPage() {
           packSize: 1,
           packWeight: null,
           warehouseIds: editForm.warehouseIds,
+          tradeUnits: editForm.tradeUnits
+            .filter((row) => row.name.trim() && Number(row.factor) > 0)
+            .map((row) => ({ name: row.name.trim(), factor: Number(row.factor) })),
           fieldValues: fieldPayload(editFieldValues),
         }),
       });
