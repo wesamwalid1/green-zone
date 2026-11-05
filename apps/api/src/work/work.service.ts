@@ -341,10 +341,13 @@ export class WorkService {
       return { mime: 'text/csv; charset=utf-8', filename: 'report.csv', body: Buffer.from(`\uFEFF${[header, ...lines].join('\n')}`, 'utf8') };
     }
     const ExcelJS = await loadExcel();
+    const { applyArabicSheet, stampApiBrandLogo } = await import('../common/excel-ar');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('تقرير');
     sheet.columns = report.columns.map((column) => ({ header: column.label, key: column.key, width: 18 }));
     report.rows.forEach((row) => sheet.addRow(row));
+    await stampApiBrandLogo(workbook, sheet);
+    applyArabicSheet(sheet);
     const buffer = await workbook.xlsx.writeBuffer();
     return {
       mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

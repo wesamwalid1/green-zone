@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowDownLeft, ArrowUpRight, Boxes, Coins, Download, FileSpreadsheet, Package, PackageX, Percent, Printer, ShoppingCart,
+  AlertTriangle, ArrowDownLeft, ArrowUpRight, Boxes, Coins, Download, FileSpreadsheet, Package, PackageX, Percent, ShoppingCart,
   TrendingDown, TrendingUp, Truck, Wallet,
 } from 'lucide-react';
 import { loadExcel } from '../lib/excel';
-import { api, formatDate, formatMoney, getApiBase } from '../lib/api';
+import { finalizeArabicWorkbook } from '../lib/docExport';
+import { api, formatDate, formatMoney } from '../lib/api';
 import { DueAmount } from '../components/DueAmount';
+import { DocExportBar } from '../components/DocExportBar';
 import {
   Badge, Button, Card, CardHeader, Empty, Input, Label, PageHeader, PrintHeader, SearchBox, StatCard, StatGrid, StatusBadge, Table, Td, Th,
 } from '../components/ui';
@@ -371,17 +373,22 @@ export function ReportsPage() {
 
   async function exportExcel() {
     if (tab === 'inventory') {
-      const token = localStorage.getItem('m5azen_token');
-      const q = applied && !applied.all && applied.ids.length ? `?warehouseIds=${applied.ids.join(',')}` : '';
-      const res = await fetch(`${getApiBase()}/api/reports/inventory/excel${q}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      const { exportTableExcel } = await import('../lib/docExport');
+      await exportTableExcel({
+        fileName: 'inventory.xlsx',
+        sheetName: 'المخزون',
+        title: 'تقرير المخزون — Green Zone',
+        headers: ['المخزن', 'الكود', 'الصنف', 'الوحدة', 'الكمية', 'تكلفة', 'بيع'],
+        rows: inventory.map((r) => [
+          r.warehouse.name,
+          r.product.sku,
+          r.product.name,
+          r.product.unit,
+          r.quantity,
+          r.product.costPrice,
+          r.product.salePrice,
+        ]),
       });
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'inventory.xlsx';
-      a.click();
       return;
     }
 
@@ -526,13 +533,7 @@ export function ReportsPage() {
         });
       });
     }
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `report-${tab}.xlsx`;
-    a.click();
+    await finalizeArabicWorkbook(wb, `report-${tab}.xlsx`, `تقرير ${TAB_LABEL[tab]} — Green Zone`);
   }
 
   return (
@@ -543,8 +544,7 @@ export function ReportsPage() {
         actions={
           <>
             <SearchBox value={search} onChange={setSearch} placeholder="بحث في التقرير..." />
-            <Button variant="secondary" onClick={() => window.print()}><Printer size={16} /> طباعة / PDF</Button>
-            <Button variant="secondary" onClick={exportExcel}><FileSpreadsheet size={16} /> Excel</Button>
+            <DocExportBar className="mb-0" onExcel={exportExcel} pdfFileName={`تقرير-${tab}.pdf`} />
             <Button onClick={() => load()}><Download size={16} /> تحديث</Button>
           </>
         }

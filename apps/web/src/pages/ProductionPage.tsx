@@ -3,8 +3,10 @@ import {
   ArrowRight, Check, Factory, Plus, Printer, SkipForward, Trash2, Warehouse,
 } from 'lucide-react';
 import { api, formatDate, formatMoney } from '../lib/api';
+import { triggerPdfSave, triggerPrint } from '../lib/docExport';
 import { useAccess } from '../lib/auth';
 import { useConfirm, useToast } from '../lib/feedback';
+import { DocExportBar } from '../components/DocExportBar';
 import { ProductPicker } from '../components/ProductPicker';
 import { DualPrintCopies } from '../components/DualPrintCopies';
 import {
@@ -624,18 +626,14 @@ export function ProductionPage() {
               <Card>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-lg font-extrabold">مرحلة {job.stageLabels[currentKind]}</h3>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="no-print"
-                    onClick={() => {
-                      window.dispatchEvent(new Event('beforeprint'));
-                      window.setTimeout(() => window.print(), 50);
-                    }}
-                  >
-                    <Printer size={14} /> طباعة نموذج المرحلة
-                  </Button>
+                  <div className="no-print flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="sm" onClick={() => triggerPrint()}>
+                      <Printer size={14} /> طباعة نموذج المرحلة
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => void triggerPdfSave(`مرحلة-${job.stageLabels[currentKind]}-${job.number}.pdf`)}>
+                      تنزيل PDF
+                    </Button>
+                  </div>
                 </div>
                 <p className="mb-4 text-sm text-muted">
                   الأوزان بالكيلو (ك). الوزن قبل يأتي تلقائيًا من المرحلة السابقة. تقدر تطبع النموذج فاضي بدون إدخال بيانات.
@@ -883,7 +881,7 @@ export function ProductionPage() {
             <Card>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 no-print">
                 <h3 className="text-base font-extrabold">تقرير التكاليف والأوزان</h3>
-                <Button variant="secondary" onClick={() => window.print()}><Printer size={14} /> طباعة التقرير</Button>
+                <DocExportBar className="mb-0" pdfFileName={`تقرير-تصنيع-${job.number}.pdf`} />
               </div>
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {showCost && <StatCard label="تكلفة الخامات" value={formatMoney(job.report.issuedCost)} tone="brand" />}

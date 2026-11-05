@@ -432,6 +432,36 @@ body {
   display: none;
 }
 
+/* التقاط PDF: نفس محتوى الطباعة (لوجو ظاهر، أزرار مخفية) */
+body.pdf-capture .no-print {
+  display: none !important;
+}
+body.pdf-capture .print-header,
+body.pdf-capture .print-only {
+  display: flex !important;
+  visibility: visible !important;
+}
+body.pdf-capture aside,
+body.pdf-capture nav {
+  display: none !important;
+}
+body.pdf-capture .dual-print-clone {
+  display: none !important;
+}
+body.pdf-capture .print-sheet,
+body.pdf-capture .print-sheet.modal-panel,
+body.pdf-capture .statement-sheet {
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  height: auto !important;
+}
+body.pdf-capture .print-header .brand-mark {
+  width: 72px !important;
+  height: 72px !important;
+}
+
 /* Row state is shown as a slim accent on the leading edge instead of tinting the whole row. */
 tr.status-CANCELLED td { color: #94a3b8; }
 tr.status-CANCELLED td:first-child,

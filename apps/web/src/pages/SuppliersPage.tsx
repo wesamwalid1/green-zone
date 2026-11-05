@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowDownCircle, ArrowUpCircle, FileText, Hash, MapPin, Pencil, Phone, Plus, Printer, Truck, Wallet, Warehouse } from 'lucide-react';
-import { loadExcel } from '../lib/excel';
-import { downloadExcelBuffer } from '../lib/docExport';
+import { exportTableExcel } from '../lib/docExport';
 import { api, formatDate, formatMoney, initialQuery } from '../lib/api';
 import { urgentInvoiceDate } from '../lib/due';
 import { DueAmount } from '../components/DueAmount';
@@ -171,17 +170,13 @@ export function SuppliersPage() {
     if (search.trim()) params.set('search', search.trim());
     if (listView !== 'all') params.set('balance', listView);
     const rows = await api<Supplier[]>(`/suppliers${params.toString() ? `?${params}` : ''}`);
-    const ExcelJS = await loadExcel();
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('الموردين');
-    sheet.addRow(['الكود', 'الاسم', 'الهاتف', 'العنوان', 'الرصيد', 'الحالة']);
-    rows.forEach((row) => sheet.addRow([row.code, row.name, row.phone || '', row.address || '', row.balance, row.isActive === false ? 'موقوف' : 'نشط']));
-    const buffer = await workbook.xlsx.writeBuffer();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([buffer]));
-    link.download = 'suppliers.xlsx';
-    link.click();
-    URL.revokeObjectURL(link.href);
+    await exportTableExcel({
+      fileName: 'suppliers.xlsx',
+      sheetName: 'الموردين',
+      title: 'سجل الموردين — Green Zone',
+      headers: ['الكود', 'الاسم', 'الهاتف', 'العنوان', 'الرصيد', 'الحالة'],
+      rows: rows.map((row) => [row.code, row.name, row.phone || '', row.address || '', row.balance, row.isActive === false ? 'موقوف' : 'نشط']),
+    });
   }
 
   return (

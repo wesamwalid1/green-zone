@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CircleDollarSign, FileSignature, FileText, Hash, MapPin, Pencil, Phone, Plus, Printer, Users, Wallet, Warehouse } from 'lucide-react';
-import { loadExcel } from '../lib/excel';
-import { downloadExcelBuffer, exportInvoiceExcel } from '../lib/docExport';
+import { exportInvoiceExcel, exportTableExcel } from '../lib/docExport';
 import { api, formatDate, formatMoney, initialQuery } from '../lib/api';
 import { urgentInvoiceDate } from '../lib/due';
 import { DueAmount } from '../components/DueAmount';
@@ -207,17 +206,13 @@ export function CustomersPage() {
     if (search.trim()) params.set('search', search.trim());
     if (listView === 'debit') params.set('balance', 'debit');
     const rows = await api<Customer[]>(`/customers${params.toString() ? `?${params}` : ''}`);
-    const ExcelJS = await loadExcel();
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('العملاء');
-    sheet.addRow(['الكود', 'الاسم', 'الهاتف', 'العنوان', 'الرصيد', 'الحالة']);
-    rows.forEach((row) => sheet.addRow([row.code, row.name, row.phone || '', row.address || '', row.balance, row.isActive === false ? 'موقوف' : 'نشط']));
-    const buffer = await workbook.xlsx.writeBuffer();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([buffer]));
-    link.download = 'customers.xlsx';
-    link.click();
-    URL.revokeObjectURL(link.href);
+    await exportTableExcel({
+      fileName: 'customers.xlsx',
+      sheetName: 'العملاء',
+      title: 'سجل العملاء — Green Zone',
+      headers: ['الكود', 'الاسم', 'الهاتف', 'العنوان', 'الرصيد', 'الحالة'],
+      rows: rows.map((row) => [row.code, row.name, row.phone || '', row.address || '', row.balance, row.isActive === false ? 'موقوف' : 'نشط']),
+    });
   }
 
   async function showStatement(id: string) {
@@ -285,12 +280,12 @@ export function CustomersPage() {
   }
 
   async function exportContractsExcel() {
-    const ExcelJS = await loadExcel();
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('التعاقدات');
-    sheet.addRow(['الرقم', 'التاريخ', 'العميل', 'الهاتف', 'الكود', 'العنوان', 'العنوان التعاقدي']);
-    contracts.forEach((row) => {
-      sheet.addRow([
+    await exportTableExcel({
+      fileName: 'contracts.xlsx',
+      sheetName: 'التعاقدات',
+      title: 'سجل التعاقدات — Green Zone',
+      headers: ['الرقم', 'التاريخ', 'العميل', 'الهاتف', 'الكود', 'العنوان', 'العنوان التعاقدي'],
+      rows: contracts.map((row) => [
         row.number,
         formatDate(row.contractDate),
         row.customer.name,
@@ -298,10 +293,8 @@ export function CustomersPage() {
         row.customer.code,
         row.customer.address || '',
         row.title,
-      ]);
+      ]),
     });
-    const buffer = await workbook.xlsx.writeBuffer();
-    await downloadExcelBuffer(buffer as ArrayBuffer, 'contracts.xlsx');
   }
 
   async function exportContractExcel(row: Contract) {
@@ -660,7 +653,7 @@ export function CustomersPage() {
               <div className="text-2xl font-extrabold">{contractView.number}</div>
               <div className="mt-1 text-sm text-brand-100">{contractView.customer.name} · {formatDate(contractView.contractDate)}</div>
             </div>
-            <DocExportBar onExcel={() => exportContractExcel(contractView)} />
+            <DocExportBar pdfFileName={`تعاقد-${contractView.number}.pdf`} onExcel={() => exportContractExcel(contractView)} />
 
             <div className="contract-sheet space-y-5">
               <PrintHeader

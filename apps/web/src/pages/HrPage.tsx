@@ -13,6 +13,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { api, formatDate, formatMoney, getApiBase } from '../lib/api';
+import { triggerPdfSave, triggerPrint } from '../lib/docExport';
 import { useAccess } from '../lib/auth';
 import { useConfirm, useToast } from '../lib/feedback';
 import {
@@ -432,21 +433,42 @@ export function HrPage() {
     setPrintEmployeeLine(null);
     setApprovePrint(null);
     setPrintRun(runRow);
-    setTimeout(() => window.print(), 250);
+    setTimeout(() => triggerPrint(), 250);
+  }
+
+  function doPdf(runRow: PayrollRun) {
+    setPrintEmployeeLine(null);
+    setApprovePrint(null);
+    setPrintRun(runRow);
+    setTimeout(() => void triggerPdfSave(`كشف-مرتبات-${runRow.number}.pdf`), 350);
   }
 
   function printEmployeeReport(runRow: PayrollRun, line: PayrollLine) {
     setPrintRun(null);
     setApprovePrint(null);
     setPrintEmployeeLine({ run: runRow, line });
-    setTimeout(() => window.print(), 250);
+    setTimeout(() => triggerPrint(), 250);
+  }
+
+  function pdfEmployeeReport(runRow: PayrollRun, line: PayrollLine) {
+    setPrintRun(null);
+    setApprovePrint(null);
+    setPrintEmployeeLine({ run: runRow, line });
+    setTimeout(() => void triggerPdfSave(`مرتب-${line.employee?.code || line.employee?.name || line.employeeId}.pdf`), 350);
   }
 
   function printApproval(runRow: PayrollRun) {
     setPrintRun(null);
     setPrintEmployeeLine(null);
     setApprovePrint(runRow);
-    setTimeout(() => window.print(), 250);
+    setTimeout(() => triggerPrint(), 250);
+  }
+
+  function pdfApproval(runRow: PayrollRun) {
+    setPrintRun(null);
+    setPrintEmployeeLine(null);
+    setApprovePrint(runRow);
+    setTimeout(() => void triggerPdfSave(`اعتماد-مرتبات-${runRow.number}.pdf`), 350);
   }
 
   if (!loaded) {
@@ -818,6 +840,7 @@ export function HrPage() {
                       </div>
                       <div className="flex flex-wrap gap-1 no-print">
                         <Button size="sm" variant="secondary" onClick={() => doPrint(runRow)}><Printer size={14} /> طباعة</Button>
+                        <Button size="sm" variant="secondary" onClick={() => doPdf(runRow)}><Download size={14} /> PDF</Button>
                         {runRow.status === 'DRAFT' && can('hr', 'delete') && (
                           <Button size="sm" variant="danger" onClick={() => deleteRun(runRow)}><Trash2 size={14} /></Button>
                         )}
@@ -865,6 +888,9 @@ export function HrPage() {
                     <Button variant="secondary" onClick={() => printApproval(runRow)}>
                       <Printer size={14} /> طباعة الاعتماد + توقيع
                     </Button>
+                    <Button variant="secondary" onClick={() => pdfApproval(runRow)}>
+                      <Download size={14} /> PDF الاعتماد
+                    </Button>
                     {runRow.status === 'DRAFT' && can('hr', 'post') && (
                       <Button disabled={busy} onClick={() => postRun(runRow)}>اعتماد وصرف المرتبات</Button>
                     )}
@@ -883,6 +909,9 @@ export function HrPage() {
                           {showAmounts && <div className="text-lg font-black text-emerald-800">{formatMoney(line.net)}</div>}
                           <Button size="sm" variant="secondary" className="no-print" onClick={() => printEmployeeReport(runRow, line)}>
                             <Printer size={13} /> تقرير الموظف
+                          </Button>
+                          <Button size="sm" variant="secondary" className="no-print" onClick={() => pdfEmployeeReport(runRow, line)}>
+                            <Download size={13} /> PDF
                           </Button>
                         </div>
                       </div>

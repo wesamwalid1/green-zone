@@ -155,6 +155,126 @@ export class FinanceService {
     });
   }
 
+  private async resolveExpensePayAccount(methodId?: string, accountId?: string) {
+    let resolvedAccountId = accountId || '';
+    let paymentMethod = methodId || '';
+    if (methodId) {
+      const method = await this.prisma.payMethod.findUnique({ where: { id: methodId } });
+      if (!method || method.kind !== PayMethodKind.IMMEDIATE || !method.cashAccountId) {
+        throw new BadRequestException('المصروف يخصم من طريقة دفع فورية');
+      }
+      resolvedAccountId = method.cashAccountId;
+      paymentMethod = method.id;
+    }
+    const account = await this.prisma.cashAccount.findUnique({ where: { id: resolvedAccountId } });
+    if (!account) throw new NotFoundException('حساب طريقة الدفع غير موجود');
+    return { accountId: resolvedAccountId, paymentMethod };
+  }
+
+  async updateExpense(
+    id: string,
+    data: {
+      categoryId?: string;
+      methodId?: string;
+      accountId?: string;
+      amount?: number;
+      expenseDate?: string;
+      notes?: string | null;
+    },
+  ) {
+    const existing = await this.prisma.expense.findUnique({
+      where: { id },
+      include: { category: true, account: true },
+    });
+    if (!existing) throw new NotFoundException('المصروف غير موجود');
+    await assertPeriodsOpen(this.prisma, existing.expenseDate, data.expenseDate || existing.expenseDate);
+
+    const amount = data.amount != null ? Number(data.amount) : existing.amount;
+    if (!(amount > 0)) throw new BadRequestException('المبلغ لازم يكون أكبر من صفر');
+    const categoryId = data.categoryId || existing.categoryId;
+    const pay = await this.resolveExpensePayAccount(
+      data.methodId || (data.accountId ? undefined : existing.paymentMethod || undefined),
+      data.accountId || existing.accountId,
+    );
+    const category = await this.prisma.expenseCategory.findUnique({ where: { id: categoryId } });
+    if (!category) throw new BadRequestException('بند المصروف غير موجود');
+
+    return this.prisma.$transaction(async (tx) => {
+      // رجّع الخصم القديم
+      await tx.cashAccount.update({
+        where: { id: existing.accountId },
+        data: { balance: { increment: existing.amount } },
+      });
+      await tx.cashTransaction.create({
+        data: {
+          accountId: existing.accountId,
+          direction: 'IN',
+          amount: existing.amount,
+          description: `تعديل/إلغاء مصروف: ${existing.category.name}`,
+          paymentMethod: existing.paymentMethod || '',
+        },
+      });
+
+      const noteText =
+        data.notes !== undefined ? data.notes?.trim() || '' : existing.notes?.trim() || '';
+
+      // خصم بالمبلغ والحساب الجديدين
+      await tx.cashAccount.update({
+        where: { id: pay.accountId },
+        data: { balance: { decrement: amount } },
+      });
+      await tx.cashTransaction.create({
+        data: {
+          accountId: pay.accountId,
+          direction: 'OUT',
+          amount,
+          description: `مصروف: ${category.name}${noteText ? ` - ${noteText}` : ''}`,
+          paymentMethod: pay.paymentMethod,
+        },
+      });
+
+      return tx.expense.update({
+        where: { id },
+        data: {
+          categoryId,
+          accountId: pay.accountId,
+          amount,
+          expenseDate: data.expenseDate ? new Date(data.expenseDate) : existing.expenseDate,
+          paymentMethod: pay.paymentMethod,
+          notes: data.notes === undefined ? undefined : data.notes?.trim() || null,
+        },
+        include: { category: true, account: true },
+      });
+    });
+  }
+
+  async removeExpense(id: string) {
+    const existing = await this.prisma.expense.findUnique({
+      where: { id },
+      include: { category: true },
+    });
+    if (!existing) throw new NotFoundException('المصروف غير موجود');
+    await assertPeriodsOpen(this.prisma, existing.expenseDate);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.cashAccount.update({
+        where: { id: existing.accountId },
+        data: { balance: { increment: existing.amount } },
+      });
+      await tx.cashTransaction.create({
+        data: {
+          accountId: existing.accountId,
+          direction: 'IN',
+          amount: existing.amount,
+          description: `حذف مصروف: ${existing.category.name}${existing.notes ? ` - ${existing.notes}` : ''}`,
+          paymentMethod: existing.paymentMethod || '',
+        },
+      });
+      await tx.expense.delete({ where: { id } });
+      return { ok: true };
+    });
+  }
+
   async listChecks(query?: { page?: string; pageSize?: string; status?: string; direction?: string }) {
     const page = readPage(query);
     const where = {

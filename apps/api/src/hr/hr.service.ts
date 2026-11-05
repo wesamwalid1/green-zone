@@ -1029,6 +1029,7 @@ export class HrService {
   async commissionsExcel(from?: string, to?: string) {
     const report = await this.commissionsReport(from, to);
     const ExcelJS = await import('exceljs');
+    const { applyArabicSheet, stampApiBrandLogo } = await import('../common/excel-ar');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('عمولات');
     ws.columns = [
@@ -1051,6 +1052,8 @@ export class HrService {
         commissionRemaining: row.commissionRemaining,
       });
     }
+    await stampApiBrandLogo(wb, ws);
+    applyArabicSheet(ws);
     const buffer = await wb.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }

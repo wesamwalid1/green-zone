@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Barcode, Boxes, Coins, Columns3, Package, Pencil, Plus, Tag, Trash2, TrendingDown, TriangleAlert, Upload, Warehouse } from 'lucide-react';
-import { loadExcel } from '../lib/excel';
+import { exportTableExcel } from '../lib/docExport';
 import { api, formatMoney, getApiBase, initialQuery, productImageUrl } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useConfirm, useToast } from '../lib/feedback';
@@ -406,34 +406,22 @@ export function ProductsPage() {
   }, [createOpen, createForm, createFieldValues]);
 
   async function exportProducts() {
-    const ExcelJS = await loadExcel();
-    const wb = new ExcelJS.Workbook();
-    const sheet = wb.addWorksheet('الأصناف');
-    sheet.columns = [
-      { header: 'الكود', key: 'sku', width: 16 },
-      { header: 'الاسم', key: 'name', width: 28 },
-      { header: 'الوحدة', key: 'unit', width: 12 },
-      { header: 'الرصيد (ك)', key: 'qty', width: 12 },
-    ];
     const params = new URLSearchParams();
     if (search.trim()) params.set('search', search.trim());
     if (listFilter !== 'all') params.set('filter', listFilter);
     const rows = await api<Product[]>(`/products${params.toString() ? `?${params}` : ''}`);
-    rows.forEach((product) => {
-      sheet.addRow({
-        sku: product.sku,
-        name: product.name,
-        unit: product.unit || 'كيلو',
-        qty: product.stockBalances.reduce((sum, row) => sum + row.quantity, 0),
-      });
+    await exportTableExcel({
+      fileName: 'products.xlsx',
+      sheetName: 'الأصناف',
+      title: 'سجل الأصناف — Green Zone',
+      headers: ['الكود', 'الاسم', 'الوحدة', 'الرصيد (ك)'],
+      rows: rows.map((product) => [
+        product.sku,
+        product.name,
+        product.unit || 'كيلو',
+        product.stockBalances.reduce((sum, row) => sum + row.quantity, 0),
+      ]),
     });
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'products.xlsx';
-    link.click();
   }
 
   function fieldPayload(values: Record<string, string>) {

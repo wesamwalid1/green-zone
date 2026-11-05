@@ -1,9 +1,8 @@
-import { Printer } from 'lucide-react';
 import { balanceSide, formatDate, formatMoney, formatSignedMoney } from '../lib/api';
 import { DocExportBar } from './DocExportBar';
 import { loadExcel } from '../lib/excel';
-import { downloadExcelBuffer } from '../lib/docExport';
-import { BrandMark, Button, PrintHeader } from './ui';
+import { applyArabicSheetLayout, downloadExcelBuffer, stampBrandLogo } from '../lib/docExport';
+import { BrandMark, PrintHeader } from './ui';
 
 export type LedgerRow = {
   date: string;
@@ -113,12 +112,10 @@ export function StatementLedger({ data }: { data: LedgerPayload }) {
 
   return (
     <div className="statement-sheet">
-      <div className="no-print">
-        <PrintHeader
-          title={data.title}
-          subtitle={`${data.partyName}${data.partyCode ? ` · ${data.partyCode}` : ''}`}
-        />
-      </div>
+      <PrintHeader
+        title={data.title}
+        subtitle={`${data.partyName}${data.partyCode ? ` · ${data.partyCode}` : ''}`}
+      />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-brand-800/20 bg-gradient-to-l from-brand-50 via-white to-amber-50 px-4 py-3 no-print">
         <div className="flex items-center gap-3">
@@ -161,11 +158,13 @@ export function StatementLedger({ data }: { data: LedgerPayload }) {
       <div className="mb-3 flex flex-wrap justify-end gap-2 no-print">
         <DocExportBar
           className="mb-0"
+          pdfFileName={`${data.fileName.replace(/\.xlsx$/i, '')}.pdf`}
           onExcel={async () => {
             const ExcelJS = await loadExcel();
             const workbook = new ExcelJS.Workbook();
             const sheet = workbook.addWorksheet('كشف حساب');
             sheet.views = [{ rightToLeft: true }];
+            await stampBrandLogo(workbook, sheet);
             sheet.addRow(['Green Zone', 'للأسمدة والكيماويات']);
             sheet.addRow([data.title, data.partyName]);
             sheet.addRow(['الرصيد', signedBalance, side]);
@@ -195,19 +194,11 @@ export function StatementLedger({ data }: { data: LedgerPayload }) {
             });
             sheet.addRow([]);
             sheet.addRow(['الإجمالي كام', '', '', '', '', '', totalLine || totalDaen, totalPaid, totalDue, '', signedBalance]);
+            applyArabicSheetLayout(sheet);
             const buffer = await workbook.xlsx.writeBuffer();
             await downloadExcelBuffer(buffer as ArrayBuffer, data.fileName);
           }}
         />
-        <Button
-          variant="secondary"
-          onClick={() => {
-            window.dispatchEvent(new Event('beforeprint'));
-            window.setTimeout(() => window.print(), 50);
-          }}
-        >
-          <Printer size={14} /> طباعة
-        </Button>
       </div>
 
       <div className="statement-table-wrap overflow-x-auto rounded-xl border-2 border-slate-800 bg-white shadow-sm">

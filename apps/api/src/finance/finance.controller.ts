@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 import { CheckDirection, CheckStatus, Role } from '@prisma/client';
 import { Roles } from '../common/guards';
@@ -24,6 +24,15 @@ class ExpenseDto {
   @IsOptional() @IsString() paymentMethod?: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() shiftId?: string;
+}
+
+class UpdateExpenseDto {
+  @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsString() accountId?: string;
+  @IsOptional() @IsString() methodId?: string;
+  @IsOptional() @IsNumber() amount?: number;
+  @IsOptional() @IsString() expenseDate?: string;
+  @IsOptional() @IsString() notes?: string | null;
 }
 
 class CheckDto {
@@ -84,6 +93,18 @@ export class FinanceController {
   @Roles(Role.ADMIN, Role.ACCOUNTANT)
   createExpense(@Body() dto: ExpenseDto) {
     return this.service.createExpense(dto);
+  }
+
+  @Patch('expenses/:id')
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  updateExpense(@Param('id') id: string, @Body() dto: UpdateExpenseDto) {
+    return this.service.updateExpense(id, dto);
+  }
+
+  @Delete('expenses/:id')
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  deleteExpense(@Param('id') id: string) {
+    return this.service.removeExpense(id);
   }
 
   @Get('checks')

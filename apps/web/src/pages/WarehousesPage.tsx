@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Boxes, CheckCircle2, Hash, MapPin, PackageCheck, Pencil, Plus, Trash2, Warehouse } from 'lucide-react';
-import { loadExcel } from '../lib/excel';
+import { exportTableExcel } from '../lib/docExport';
 import { api, initialQuery } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useColumns } from '../lib/columns';
@@ -226,19 +226,15 @@ export function WarehousesPage() {
   }
 
   async function exportRows() {
-    const ExcelJS = await loadExcel();
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('المخازن');
-    sheet.addRow(['الكود', 'الاسم', 'الموقع', 'الوصف', 'الأصناف', 'الكمية', 'الحالة']);
-    filtered.forEach((row) => {
-      sheet.addRow([row.code, row.name, row.location || '', row.description || '', row.itemCount || 0, row.quantity || 0, row.isActive ? 'نشط' : 'متوقف']);
+    await exportTableExcel({
+      fileName: 'warehouses.xlsx',
+      sheetName: 'المخازن',
+      title: 'سجل المخازن — Green Zone',
+      headers: ['الكود', 'الاسم', 'الموقع', 'الوصف', 'الأصناف', 'الكمية', 'الحالة'],
+      rows: filtered.map((row) => [
+        row.code, row.name, row.location || '', row.description || '', row.itemCount || 0, row.quantity || 0, row.isActive ? 'نشط' : 'متوقف',
+      ]),
     });
-    const buffer = await workbook.xlsx.writeBuffer();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([buffer]));
-    link.download = 'warehouses.xlsx';
-    link.click();
-    URL.revokeObjectURL(link.href);
   }
 
   return (

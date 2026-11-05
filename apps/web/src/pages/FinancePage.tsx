@@ -1,16 +1,29 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, FileCheck2, Plus, Receipt, Scale, Tags } from 'lucide-react';
+import { CalendarClock, FileCheck2, Pencil, Plus, Receipt, Scale, Tags, Trash2 } from 'lucide-react';
 import { api, formatDate, formatMoney } from '../lib/api';
+import { exportTableExcel } from '../lib/docExport';
 import { useConfirm, useToast } from '../lib/feedback';
 import { BarList } from '../components/charts';
+import { DocExportBar } from '../components/DocExportBar';
+import { IconAction } from '../components/ListBar';
 import {
-  Badge, Button, Card, CardHeader, Empty, ErrorState, Input, Label, NumberInput, PageHeader, PageSkeleton, Pager, Select, StatCard, StatGrid, Table, Td, Th,
+  Badge, Button, Card, CardHeader, Empty, ErrorState, Input, Label, Modal, NumberInput, PageHeader, PageSkeleton, Pager, PrintHeader, Select, StatCard, StatGrid, Table, Td, Th,
   type Tone,
 } from '../components/ui';
 
 type Tab = 'expenses' | 'checks';
 
-type Expense = { id: string; amount: number; expenseDate: string; notes?: string | null; category: { name: string }; account: { name: string } };
+type Expense = {
+  id: string;
+  amount: number;
+  expenseDate: string;
+  notes?: string | null;
+  categoryId: string;
+  accountId: string;
+  paymentMethod?: string | null;
+  category: { name: string };
+  account: { name: string };
+};
 type Check = { id: string; direction: string; checkNumber: string; bankName: string; amount: number; dueDate: string; status: string; customer?: { name: string } | null; supplier?: { name: string } | null };
 const CHECK_STATUS: Record<string, { label: string; tone: Tone }> = {
   PENDING: { label: 'قيد الانتظار', tone: 'amber' },
@@ -20,6 +33,13 @@ const CHECK_STATUS: Record<string, { label: string; tone: Tone }> = {
 };
 
 const num = (v: number | '') => (v === '' ? 0 : v);
+const toDateInput = (iso: string) => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+  } catch {
+    return iso.slice(0, 10);
+  }
+};
 
 export function FinancePage() {
   const toast = useToast();
@@ -35,6 +55,8 @@ export function FinancePage() {
   const [checks, setChecks] = useState<Check[]>([]);
   const [catName, setCatName] = useState('');
   const [expense, setExpense] = useState({ categoryId: '', methodId: '', amount: '' as number | '', notes: '' });
+  const [editExpense, setEditExpense] = useState<Expense | null>(null);
+  const [editForm, setEditForm] = useState({ categoryId: '', methodId: '', amount: '' as number | '', expenseDate: '', notes: '' });
   const [checkForm, setCheckForm] = useState({ direction: 'IN', checkNumber: '', bankName: '', amount: '' as number | '', dueDate: '' });
   const [checkFilter, setCheckFilter] = useState<'ALL' | 'PENDING' | 'IN' | 'OUT'>('ALL');
   const [listPage, setListPage] = useState(1);
@@ -90,12 +112,56 @@ export function FinancePage() {
     }
   }
 
+  function openEdit(row: Expense) {
+    setEditExpense(row);
+    setEditForm({
+      categoryId: row.categoryId,
+      methodId: row.paymentMethod || '',
+      amount: row.amount,
+      expenseDate: toDateInput(row.expenseDate),
+      notes: row.notes || '',
+    });
+  }
+
+  async function removeExpense(row: Expense) {
+    if (!(await confirm({
+      title: 'حذف مصروف',
+      message: `هل تريد حذف مصروف «${row.category.name}» بمبلغ ${formatMoney(row.amount)}؟ سيتم رد المبلغ للخزنة.`,
+      confirmLabel: 'حذف',
+      danger: true,
+    }))) return;
+    await run(() => api(`/finance/expenses/${row.id}`, { method: 'DELETE' }), 'تم حذف المصروف ورد المبلغ للخزنة');
+  }
+
+  async function exportExpensesExcel() {
+    try {
+      const all = await api<Expense[]>('/finance/expenses');
+      const today = new Date().toISOString().slice(0, 10);
+      await exportTableExcel({
+        fileName: `سجل-المصروفات-${today}.xlsx`,
+        sheetName: 'المصروفات',
+        title: 'سجل المصروفات — Green Zone',
+        headers: ['التاريخ', 'البند', 'الخزنة', 'الملاحظة', 'المبلغ'],
+        rows: all.map((row) => [
+          formatDate(row.expenseDate),
+          row.category.name,
+          row.account.name,
+          row.notes || '',
+          row.amount,
+        ]),
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذر تصدير Excel');
+    }
+  }
+
   const expenseTotal = expenseSummary.totalAmount;
   const expenseMonth = expenseSummary.monthAmount;
   const pendingIn = checkSummary.pendingIn;
   const pendingOut = checkSummary.pendingOut;
   const byCategory = expenseSummary.byCategory;
   const visibleChecks = checks;
+  const immediateMethods = methods.filter((method) => method.kind === 'IMMEDIATE');
 
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: 'expenses', label: 'المصروفات', count: expenseTotalCount },
@@ -106,108 +172,135 @@ export function FinancePage() {
 
   return (
     <div>
-      <PageHeader title="المالية" subtitle="مصروفات مصنفة ودفتر شيكات" />
-      {loadError && <Card className="mb-4"><ErrorState text={loadError} onRetry={load} /></Card>}
+      <div className="no-print">
+        <PageHeader title="المالية" subtitle="مصروفات مصنفة ودفتر شيكات" />
+        {loadError && <Card className="mb-4"><ErrorState text={loadError} onRetry={load} /></Card>}
 
-      <StatGrid>
-        <StatCard label="مصروفات الشهر" value={formatMoney(expenseMonth)} hint={`الإجمالي المسجل ${formatMoney(expenseTotal)}`} icon={Receipt} tone="amber" onClick={() => setTab('expenses')} active={tab === 'expenses'} />
-        <StatCard label="شيكات واردة معلقة" value={formatMoney(pendingIn)} hint={`${checkSummary.pendingInCount} شيك`} icon={FileCheck2} tone="emerald" onClick={() => { setTab('checks'); setCheckFilter('IN'); }} />
-        <StatCard label="شيكات صادرة معلقة" value={formatMoney(pendingOut)} hint={`${checkSummary.pendingOutCount} شيك`} icon={CalendarClock} tone="rose" onClick={() => { setTab('checks'); setCheckFilter('OUT'); }} />
-      </StatGrid>
+        <StatGrid>
+          <StatCard label="مصروفات الشهر" value={formatMoney(expenseMonth)} hint={`الإجمالي المسجل ${formatMoney(expenseTotal)}`} icon={Receipt} tone="amber" onClick={() => setTab('expenses')} active={tab === 'expenses'} />
+          <StatCard label="شيكات واردة معلقة" value={formatMoney(pendingIn)} hint={`${checkSummary.pendingInCount} شيك`} icon={FileCheck2} tone="emerald" onClick={() => { setTab('checks'); setCheckFilter('IN'); }} />
+          <StatCard label="شيكات صادرة معلقة" value={formatMoney(pendingOut)} hint={`${checkSummary.pendingOutCount} شيك`} icon={CalendarClock} tone="rose" onClick={() => { setTab('checks'); setCheckFilter('OUT'); }} />
+        </StatGrid>
 
-      <div className="mb-4 flex w-fit max-w-full flex-wrap rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-        {tabs.map((t) => (
-          <button key={t.id} type="button" onClick={() => setTab(t.id)} className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-[13px] font-bold transition ${tab === t.id ? 'bg-brand-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-            {t.label}
-            <span className={`rounded-md px-1.5 text-[11px] tabular-nums ${tab === t.id ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>
-          </button>
-        ))}
+        <div className="mb-4 flex w-fit max-w-full flex-wrap rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          {tabs.map((t) => (
+            <button key={t.id} type="button" onClick={() => setTab(t.id)} className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-[13px] font-bold transition ${tab === t.id ? 'bg-brand-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              {t.label}
+              <span className={`rounded-md px-1.5 text-[11px] tabular-nums ${tab === t.id ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === 'expenses' && (
-        <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader title="تسجيل مصروف" subtitle="يُخصم من طريقة الدفع فورًا" icon={Plus} />
-              <form
-                className="space-y-3"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (!expense.categoryId || !expense.methodId) return toast.error('اختر البند وطريقة الدفع');
-                  if (num(expense.amount) <= 0) return toast.error('أدخل مبلغًا أكبر من صفر');
-                  const ok = await run(() => api('/finance/expenses', { method: 'POST', body: JSON.stringify({ categoryId: expense.categoryId, methodId: expense.methodId, amount: num(expense.amount), notes: expense.notes || undefined }) }), 'تم تسجيل المصروف');
-                  if (ok) setExpense({ ...expense, amount: '', notes: '' });
-                }}
-              >
-                <div>
-                  <Label>البند</Label>
-                  <Select value={expense.categoryId} onChange={(e) => setExpense({ ...expense, categoryId: e.target.value })}>
-                    <option value="">اختر</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </Select>
-                </div>
-                <div>
-                  <Label>طريقة الدفع</Label>
-                  <Select value={expense.methodId} onChange={(e) => setExpense({ ...expense, methodId: e.target.value })}>
-                    <option value="">اختر</option>
-                    {methods.filter((method) => method.kind === 'IMMEDIATE').map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
-                  </Select>
-                </div>
-                <div><Label>المبلغ</Label><NumberInput value={expense.amount} onValueChange={(v) => setExpense({ ...expense, amount: v })} /></div>
-                <div><Label>ملاحظة</Label><Input value={expense.notes} onChange={(e) => setExpense({ ...expense, notes: e.target.value })} placeholder="اختياري" /></div>
-                <Button type="submit" className="w-full" disabled={busy}>تسجيل المصروف</Button>
-              </form>
-            </Card>
-            <Card>
-              <CardHeader title="بنود المصروفات" subtitle={`${categories.length} بند`} icon={Tags} />
-              <form
-                className="flex gap-2"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (!catName.trim()) return toast.error('اكتب اسم البند');
-                  const ok = await run(() => api('/finance/expense-categories', { method: 'POST', body: JSON.stringify({ name: catName.trim() }) }), 'تمت إضافة البند');
-                  if (ok) setCatName('');
-                }}
-              >
-                <Input value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="بند مصروف جديد" />
-                <Button type="submit" variant="secondary" disabled={busy}>إضافة</Button>
-              </form>
-              {categories.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {categories.map((c) => <Badge key={c.id} tone="slate">{c.name}</Badge>)}
-                </div>
-              )}
-            </Card>
-          </div>
-          <div className="space-y-4">
-            {byCategory.length > 0 && (
+        <>
+          <PrintHeader title="سجل المصروفات" subtitle={`${expenseTotalCount} مصروف · الإجمالي ${formatMoney(expenseTotal)}`} />
+          <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+            <div className="space-y-4 no-print">
               <Card>
-                <CardHeader title="توزيع المصروفات حسب البند" subtitle={`الإجمالي ${formatMoney(expenseTotal)}`} icon={Scale} />
-                <BarList rows={byCategory} color="from-amber-400 to-amber-600" />
+                <CardHeader title="تسجيل مصروف" subtitle="يُخصم من طريقة الدفع فورًا" icon={Plus} />
+                <form
+                  className="space-y-3"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!expense.categoryId || !expense.methodId) return toast.error('اختر البند وطريقة الدفع');
+                    if (num(expense.amount) <= 0) return toast.error('أدخل مبلغًا أكبر من صفر');
+                    const ok = await run(() => api('/finance/expenses', { method: 'POST', body: JSON.stringify({ categoryId: expense.categoryId, methodId: expense.methodId, amount: num(expense.amount), notes: expense.notes || undefined }) }), 'تم تسجيل المصروف');
+                    if (ok) setExpense({ ...expense, amount: '', notes: '' });
+                  }}
+                >
+                  <div>
+                    <Label>البند</Label>
+                    <Select value={expense.categoryId} onChange={(e) => setExpense({ ...expense, categoryId: e.target.value })}>
+                      <option value="">اختر</option>
+                      {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>طريقة الدفع</Label>
+                    <Select value={expense.methodId} onChange={(e) => setExpense({ ...expense, methodId: e.target.value })}>
+                      <option value="">اختر</option>
+                      {immediateMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+                    </Select>
+                  </div>
+                  <div><Label>المبلغ</Label><NumberInput value={expense.amount} onValueChange={(v) => setExpense({ ...expense, amount: v })} /></div>
+                  <div><Label>ملاحظة</Label><Input value={expense.notes} onChange={(e) => setExpense({ ...expense, notes: e.target.value })} placeholder="اختياري" /></div>
+                  <Button type="submit" className="w-full" disabled={busy}>تسجيل المصروف</Button>
+                </form>
               </Card>
-            )}
-            <Card>
-              <CardHeader title="سجل المصروفات" subtitle={`${expenseTotalCount} مصروف`} icon={Receipt} />
-              {expenses.length === 0 ? <Empty text="لا توجد مصروفات مسجلة" hint="سجّل أول مصروف من النموذج" /> : (
-                <Table>
-                  <thead><tr><Th>التاريخ</Th><Th>البند</Th><Th>الخزنة</Th><Th>ملاحظة</Th><Th>المبلغ</Th></tr></thead>
-                  <tbody>
-                    {expenses.map((row) => (
-                      <tr key={row.id} className="row-credit">
-                        <Td className="whitespace-nowrap text-slate-500">{formatDate(row.expenseDate)}</Td>
-                        <Td><Badge tone="amber">{row.category.name}</Badge></Td>
-                        <Td className="text-slate-600">{row.account.name}</Td>
-                        <Td className="max-w-xs truncate text-muted">{row.notes || '—'}</Td>
-                        <Td className="whitespace-nowrap font-extrabold text-rose-600">{formatMoney(row.amount)}</Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+              <Card>
+                <CardHeader title="بنود المصروفات" subtitle={`${categories.length} بند`} icon={Tags} />
+                <form
+                  className="flex gap-2"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!catName.trim()) return toast.error('اكتب اسم البند');
+                    const ok = await run(() => api('/finance/expense-categories', { method: 'POST', body: JSON.stringify({ name: catName.trim() }) }), 'تمت إضافة البند');
+                    if (ok) setCatName('');
+                  }}
+                >
+                  <Input value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="بند مصروف جديد" />
+                  <Button type="submit" variant="secondary" disabled={busy}>إضافة</Button>
+                </form>
+                {categories.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {categories.map((c) => <Badge key={c.id} tone="slate">{c.name}</Badge>)}
+                  </div>
+                )}
+              </Card>
+            </div>
+            <div className="space-y-4">
+              {byCategory.length > 0 && (
+                <Card className="no-print">
+                  <CardHeader title="توزيع المصروفات حسب البند" subtitle={`الإجمالي ${formatMoney(expenseTotal)}`} icon={Scale} />
+                  <BarList rows={byCategory} color="from-amber-400 to-amber-600" />
+                </Card>
               )}
-              <Pager page={listPage} pages={Math.max(1, Math.ceil(expenseTotalCount / pageSize))} total={expenseTotalCount} from={expenseTotalCount === 0 ? 0 : (listPage - 1) * pageSize + 1} to={Math.min(listPage * pageSize, expenseTotalCount)} pageSize={pageSize} onPageSize={setPageSize} onPage={setListPage} />
-            </Card>
+              <Card>
+                <CardHeader
+                  title="سجل المصروفات"
+                  subtitle={`${expenseTotalCount} مصروف`}
+                  icon={Receipt}
+                  actions={<DocExportBar className="mb-0" onExcel={exportExpensesExcel} pdfFileName="سجل-المصروفات.pdf" />}
+                />
+                {expenses.length === 0 ? <Empty text="لا توجد مصروفات مسجلة" hint="سجّل أول مصروف من النموذج" /> : (
+                  <Table>
+                    <thead>
+                      <tr>
+                        <Th>التاريخ</Th>
+                        <Th>البند</Th>
+                        <Th>الخزنة</Th>
+                        <Th>ملاحظة</Th>
+                        <Th>المبلغ</Th>
+                        <Th className="no-print" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expenses.map((row) => (
+                        <tr key={row.id} className="row-credit">
+                          <Td className="whitespace-nowrap text-slate-500">{formatDate(row.expenseDate)}</Td>
+                          <Td><Badge tone="amber">{row.category.name}</Badge></Td>
+                          <Td className="text-slate-600">{row.account.name}</Td>
+                          <Td className="max-w-xs truncate text-muted">{row.notes || '—'}</Td>
+                          <Td className="whitespace-nowrap font-extrabold text-rose-600">{formatMoney(row.amount)}</Td>
+                          <Td className="no-print">
+                            <div className="flex items-center gap-1">
+                              <IconAction label="تعديل" onClick={() => openEdit(row)}><Pencil size={14} /></IconAction>
+                              <IconAction label="حذف" danger onClick={() => removeExpense(row)}><Trash2 size={14} /></IconAction>
+                            </div>
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                )}
+                <div className="no-print">
+                  <Pager page={listPage} pages={Math.max(1, Math.ceil(expenseTotalCount / pageSize))} total={expenseTotalCount} from={expenseTotalCount === 0 ? 0 : (listPage - 1) * pageSize + 1} to={Math.min(listPage * pageSize, expenseTotalCount)} pageSize={pageSize} onPageSize={setPageSize} onPage={setListPage} />
+                </div>
+              </Card>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {tab === 'checks' && (
@@ -275,7 +368,7 @@ export function FinancePage() {
                             <div className="flex items-center gap-1.5">
                               <Select value={settleMethod[row.id] || ''} onChange={(e) => setSettleMethod({ ...settleMethod, [row.id]: e.target.value })}>
                                 <option value="">طريقة التحصيل</option>
-                                {methods.filter((method) => method.kind === 'IMMEDIATE').map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+                                {immediateMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
                               </Select>
                               <Button size="sm" variant="soft" disabled={busy} onClick={() => {
                                 const methodId = settleMethod[row.id];
@@ -302,6 +395,57 @@ export function FinancePage() {
           </Card>
         </div>
       )}
+
+      <Modal open={!!editExpense} onClose={() => setEditExpense(null)} title="تعديل مصروف">
+        {editExpense && (
+          <form
+            className="space-y-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!editForm.categoryId) return toast.error('اختر البند');
+              if (num(editForm.amount) <= 0) return toast.error('أدخل مبلغًا أكبر من صفر');
+              const ok = await run(
+                () => api(`/finance/expenses/${editExpense.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({
+                    categoryId: editForm.categoryId,
+                    methodId: editForm.methodId || undefined,
+                    amount: num(editForm.amount),
+                    expenseDate: editForm.expenseDate || undefined,
+                    notes: editForm.notes.trim() || null,
+                  }),
+                }),
+                'تم تعديل المصروف',
+              );
+              if (ok) setEditExpense(null);
+            }}
+          >
+            <div>
+              <Label>البند</Label>
+              <Select value={editForm.categoryId} onChange={(e) => setEditForm({ ...editForm, categoryId: e.target.value })}>
+                <option value="">اختر</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label>طريقة الدفع</Label>
+              <Select value={editForm.methodId} onChange={(e) => setEditForm({ ...editForm, methodId: e.target.value })}>
+                <option value="">إبقاء نفس الخزنة ({editExpense.account.name})</option>
+                {immediateMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label>المبلغ</Label><NumberInput value={editForm.amount} onValueChange={(v) => setEditForm({ ...editForm, amount: v })} /></div>
+              <div><Label>التاريخ</Label><Input type="date" value={editForm.expenseDate} onChange={(e) => setEditForm({ ...editForm, expenseDate: e.target.value })} /></div>
+            </div>
+            <div><Label>ملاحظة</Label><Input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="اختياري" /></div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={() => setEditExpense(null)}>إلغاء</Button>
+              <Button type="submit" disabled={busy}>حفظ التعديل</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

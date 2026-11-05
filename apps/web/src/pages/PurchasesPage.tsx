@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Printer, Eye, Trash2, Pencil, ShoppingBag } from 'lucide-react';
-import { loadExcel } from '../lib/excel';
-import { exportInvoiceExcel } from '../lib/docExport';
+import { exportInvoiceExcel, exportTableExcel } from '../lib/docExport';
 import { api, formatDate, formatMoney, initialQuery } from '../lib/api';
 import { DueAmount } from '../components/DueAmount';
 import { DocExportBar } from '../components/DocExportBar';
@@ -357,17 +356,13 @@ export function PurchasesPage() {
     if (status === 'due') params.set('due', '1');
     else if (status !== 'all') params.set('status', status);
     const rows = await api<Invoice[]>(`/purchases${params.toString() ? `?${params}` : ''}`);
-    const ExcelJS = await loadExcel();
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('المشتريات');
-    sheet.addRow(['الرقم', 'المورد', 'المخزن', 'التاريخ', 'الإجمالي', 'المدفوع', 'المتبقي', 'الحالة']);
-    rows.forEach((inv) => sheet.addRow([inv.number, inv.supplier.name, inv.warehouse.name, formatDate(inv.invoiceDate), inv.total, inv.paidAmount, owed(inv), inv.status]));
-    const buffer = await workbook.xlsx.writeBuffer();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([buffer]));
-    link.download = 'purchases.xlsx';
-    link.click();
-    URL.revokeObjectURL(link.href);
+    await exportTableExcel({
+      fileName: 'purchases.xlsx',
+      sheetName: 'المشتريات',
+      title: 'سجل فواتير المشتريات — Green Zone',
+      headers: ['الرقم', 'المورد', 'المخزن', 'التاريخ', 'الإجمالي', 'المدفوع', 'المتبقي', 'الحالة'],
+      rows: rows.map((inv) => [inv.number, inv.supplier.name, inv.warehouse.name, formatDate(inv.invoiceDate), inv.total, inv.paidAmount, owed(inv), inv.status]),
+    });
   }
 
   return (
@@ -673,6 +668,7 @@ export function PurchasesPage() {
             <div className="mb-4 flex flex-wrap justify-end gap-2 no-print">
               <DocExportBar
                 className="mb-0"
+                pdfFileName={`فاتورة-شراء-${view.number}.pdf`}
                 onExcel={() => exportInvoiceExcel({
                   fileName: `فاتورة-شراء-${view.number}.xlsx`,
                   title: `فاتورة شراء ${view.number}`,

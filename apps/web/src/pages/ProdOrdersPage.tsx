@@ -295,7 +295,7 @@ export function ProdOrdersPage() {
           subtitle="اتفاق ميداني: المهندس من الحساب تلقائياً · عميل · بنود · مدفوع / متبقي"
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <DocExportBar className="mb-0" onExcel={exportExcel} />
+              <DocExportBar className="mb-0" onExcel={exportExcel} pdfFileName="أوردرات-الإنتاج.pdf" />
               <Button onClick={openCreate}>
                 <Plus size={16} /> أوردر جديد
               </Button>

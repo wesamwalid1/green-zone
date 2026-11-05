@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, Boxes, Coins, Eye, PackageCheck, PackageX, Pencil, Printer, Search, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Boxes, Coins, Eye, PackageCheck, PackageX, Pencil, Search, Trash2 } from 'lucide-react';
 import { api, formatDate, formatMoney } from '../lib/api';
 import { useConfirm, useToast } from '../lib/feedback';
+import { DocExportBar } from '../components/DocExportBar';
 import { ProductPicker } from '../components/ProductPicker';
 import { productsForWarehouse } from '../lib/productWarehouse';
 import {
@@ -270,9 +271,7 @@ export function StockPage() {
         subtitle="الأرصدة · دفعات الشراء · التكلفة · الحركات"
         actions={
           <>
-            <Button variant="secondary" onClick={() => window.print()}>
-              <Printer size={16} /> طباعة
-            </Button>
+            <DocExportBar className="mb-0" pdfFileName="المخزون.pdf" />
             <Button variant="secondary" onClick={() => { setLookupOpen(true); setLookupQ(''); setLookupRows([]); }}>
               <Search size={16} /> بحث في مخازن أخرى
             </Button>
@@ -459,9 +458,9 @@ export function StockPage() {
               </div>
             )}
 
-            <div className="flex justify-between no-print">
+            <div className="flex flex-wrap items-center justify-between gap-2 no-print">
               <div className="text-sm font-semibold text-slate-700">دفعات الشراء (تشغيلة / صلاحية / سعر)</div>
-              <Button variant="secondary" onClick={() => window.print()}><Printer size={14} /> طباعة</Button>
+              <DocExportBar className="mb-0" pdfFileName={`مخزون-${detail.product.name}.pdf`} />
             </div>
 
             {detail.batches.length === 0 ? (

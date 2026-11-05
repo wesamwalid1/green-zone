@@ -440,6 +440,7 @@ export class ReportsService {
   async exportInventoryExcel(warehouseIds?: string[]) {
     const rows = await this.inventory(warehouseIds);
     const ExcelJS = await loadExcel();
+    const { applyArabicSheet, stampApiBrandLogo } = await import('../common/excel-ar');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('المخزون');
     ws.columns = [
@@ -463,6 +464,8 @@ export class ReportsService {
       });
     }
     ws.getRow(1).font = { bold: true };
+    await stampApiBrandLogo(wb, ws);
+    applyArabicSheet(ws);
     const buffer = await wb.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }

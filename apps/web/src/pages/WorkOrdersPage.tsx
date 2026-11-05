@@ -204,7 +204,7 @@ export function WorkOrdersPage() {
           subtitle="تجميع عدة أوردرات إنتاج في دفعة تشغيل واحدة — التسليم يُنشئ فاتورة وتحصيل تلقائياً"
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <DocExportBar className="mb-0" onExcel={exportExcel} />
+              <DocExportBar className="mb-0" onExcel={exportExcel} pdfFileName="أوامر-التشغيل.pdf" />
               <Button onClick={() => setOpen(true)}>
                 <Plus size={16} /> أمر تشغيل جديد
               </Button>

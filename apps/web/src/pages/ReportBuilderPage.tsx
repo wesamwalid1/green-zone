@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  Bookmark, Check, Copy, FileBarChart, FileSpreadsheet, Play, Printer, Save, SlidersHorizontal, Table as TableIcon, Trash2,
+  Bookmark, Check, Copy, Download, FileBarChart, FileSpreadsheet, Play, Printer, Save, SlidersHorizontal, Table as TableIcon, Trash2,
 } from 'lucide-react';
 import { api, formatDate, formatMoney } from '../lib/api';
+import { exportTableExcel, triggerPdfSave, triggerPrint } from '../lib/docExport';
 import { useConfirm, useToast } from '../lib/feedback';
-import { Button, Card, CardHeader, Empty, Input, Label, PageHeader, Select, Table, Td, Th } from '../components/ui';
+import { Button, Card, CardHeader, Empty, Input, Label, PageHeader, PrintHeader, Select, Table, Td, Th } from '../components/ui';
 
 type Field = { key: string; label: string };
 type Spec = { key: string; label: string; fields: Field[]; groups: string[]; statuses: string[] };
@@ -118,6 +119,16 @@ export function ReportBuilderPage() {
   }
 
   async function download(format: 'csv' | 'xlsx') {
+    if (format === 'xlsx' && preview) {
+      await exportTableExcel({
+        fileName: 'report.xlsx',
+        sheetName: 'تقرير',
+        title: 'تقرير مخصص — Green Zone',
+        headers: preview.columns.map((column) => column.label),
+        rows: preview.rows.map((row) => preview.columns.map((column) => row[column.key] ?? '')),
+      });
+      return;
+    }
     const blob = await api<Blob>('/work/reports/export', {
       method: 'POST',
       body: JSON.stringify({ format, definition: JSON.stringify(definition) }),
@@ -133,6 +144,7 @@ export function ReportBuilderPage() {
   return (
     <div>
       <PageHeader title="منشئ التقارير" subtitle="اختر الوحدة والحقول والفلاتر، ثم عاين واحفظ وصدّر من البيانات المحفوظة" />
+      <PrintHeader title="تقرير مخصص" subtitle={preview ? `${preview.totalRows} صف` : undefined} />
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}
       <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
         <Card>
@@ -218,7 +230,8 @@ export function ReportBuilderPage() {
                 <>
                   <Button size="sm" variant="secondary" disabled={!preview} onClick={() => download('xlsx')}><FileSpreadsheet size={14} /> Excel</Button>
                   <Button size="sm" variant="secondary" disabled={!preview} onClick={() => download('csv')}>CSV</Button>
-                  <Button size="sm" variant="secondary" disabled={!preview} onClick={() => window.print()}><Printer size={14} /> طباعة / PDF</Button>
+                  <Button size="sm" variant="secondary" disabled={!preview} onClick={() => triggerPrint()}><Printer size={14} /> طباعة</Button>
+                  <Button size="sm" variant="secondary" disabled={!preview} onClick={() => void triggerPdfSave('تقرير-مخصص.pdf')}><Download size={14} /> تنزيل PDF</Button>
                 </>
               }
             />

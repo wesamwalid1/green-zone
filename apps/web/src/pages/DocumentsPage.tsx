@@ -325,6 +325,7 @@ export function DocumentsPage() {
         {printDoc && (
           <div>
             <DocExportBar
+              pdfFileName={`مستند-${printDoc.number}.pdf`}
               onExcel={() => exportInvoiceExcel({
                 fileName: `مستند-${printDoc.number}.xlsx`,
                 title: `${KINDS.find((k) => k.id === printDoc.kind)?.label || 'مستند'} ${printDoc.number}`,
