@@ -38,6 +38,8 @@ const SKIP = [
   /^\/api\/users\/me(?:\/|$)/,
   /^\/api\/settings\/unlock$/,
   /^\/api\/settings\/edit-unlock$/,
+  /^\/api\/desktop(?:\/|$)/,
+  /^\/api\/sync(?:\/|$)/,
 ];
 
 export function requestPath(req: { originalUrl?: string; url?: string }) {

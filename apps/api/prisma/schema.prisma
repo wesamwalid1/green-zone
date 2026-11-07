@@ -270,10 +270,11 @@ model ProductFieldValue {
 }
 
 model StockBalance {
-  id          String @id @default(cuid())
+  id          String   @id @default(cuid())
   warehouseId String
   productId   String
-  quantity    Float  @default(0)
+  quantity    Float    @default(0)
+  updatedAt   DateTime @updatedAt @default(now())
 
   warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -1569,4 +1570,69 @@ model MfgStageMaterial {
 
   stage   MfgStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
   product Product  @relation(fields: [productId], references: [id])
+}
+
+// ─── مزامنة أونلاين/أوفلاين (مرحلة 1) ───────────────────────────────────────
+
+enum SyncOp {
+  UPSERT
+  DELETE
+}
+
+/// جهاز ديسكتوب مسجّل للمزامنة مع السحابة
+model SyncDevice {
+  id           String   @id @default(cuid())
+  deviceKey    String   @unique
+  label        String   @default("")
+  userId       String?
+  lastSeenAt   DateTime @default(now())
+  lastPullAt   DateTime?
+  lastPushAt   DateTime?
+  createdAt    DateTime @default(now())
+}
+
+/// طابور التغييرات المحلية / سجل التغييرات للمزامنة
+model SyncChange {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  op          SyncOp   @default(UPSERT)
+  payload     String   // JSON
+  version     Int      @default(1)
+  deviceKey   String   @default("local")
+  createdAt   DateTime @default(now())
+  /// هل اتبعت للطرف البعيد؟
+  pushedAt    DateTime?
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([pushedAt])
+}
+
+/// مؤشر آخر سحب من السحابة
+model SyncState {
+  id            String   @id @default("default")
+  deviceKey     String   @default("local")
+  cloudUrl      String   @default("")
+  cloudToken    String   @default("")
+  lastPullCursor String  @default("")
+  lastSyncAt    DateTime?
+  lastError     String?
+  onlineMode    Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+}
+
+/// تعارضات آخر-كتابة-تفوز التي تحتاج مراجعة
+model SyncConflict {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  localPayload  String?
+  remotePayload String?
+  resolution  String   @default("REMOTE_WINS")
+  note        String?
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@index([entityType, entityId])
 }

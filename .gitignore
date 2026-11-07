@@ -35,3 +35,7 @@ _*.tmp
 
 .vercel
 .env*
+
+# مثبّت الديسكتوب كبير — يُرفع على Releases/السيرفر مش Git
+apps/web/public/downloads/*.exe
+apps/web/dist/downloads/

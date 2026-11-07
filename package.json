@@ -23,7 +23,9 @@
     "db:generate": "npm run prisma:generate -w @m5azen/api",
     "db:push": "npm run prisma:push -w @m5azen/api",
     "db:seed": "npm run prisma:seed -w @m5azen/api",
-    "setup": "npm install && npm run db:generate"
+    "setup": "npm install && npm run db:generate",
+    "deploy:up": "docker compose -f deploy/docker-compose.yml up -d --build",
+    "deploy:down": "docker compose -f deploy/docker-compose.yml down"
   },
   "engines": {
     "node": ">=20"

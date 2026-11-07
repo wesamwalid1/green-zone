@@ -1,0 +1,46 @@
+# تشغيل Green Zone على VPS (أونلاين)
+# الاستخدام:
+#   cd deploy
+#   cp ../.env.example ../.env   # عدّل JWT_SECRET و DESKTOP_DOWNLOAD_URL
+#   docker compose up -d --build
+#
+# القاعدة: SQLite على volume (متوافق مع Prisma الحالي).
+# للسحابة المدارة استخدم TURSO_DATABASE_URL بدل الملف المحلي.
+
+services:
+  greenzone:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: greenzone
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOST: "0.0.0.0"
+      DATABASE_URL: file:/data/greenzone.db
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      COMPANY_NAME: ${COMPANY_NAME:-Green Zone}
+      WEB_DIST: /app/apps/web/dist
+      DESKTOP_DOWNLOAD_URL: ${DESKTOP_DOWNLOAD_URL:-}
+      SYNC_API_KEY: ${SYNC_API_KEY:-}
+      # اختياري — Turso بدل الملف:
+      # TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
+      # TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
+      SYNC_MODE: cloud
+      SYNC_PHASE: "1"
+    volumes:
+      - greenzone-data:/data
+      - greenzone-downloads:/app/apps/web/dist/downloads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  greenzone-data:
+  greenzone-downloads:

@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../lib/auth';
 import { getApiBase, setApiBase } from '../lib/api';
 import { getHomePath } from '../lib/nav';
+import { DesktopDownloadButton } from '../components/DesktopDownloadButton';
 
 const REMEMBER_KEY = 'm5azen.rememberUser';
 
@@ -149,6 +150,13 @@ export function LoginPage() {
                   )}
                 </button>
               </form>
+
+              <div className="mt-6">
+                <DesktopDownloadButton variant="login" className="w-full" />
+                <p className="mt-2 text-center text-[11px] leading-5 text-muted">
+                  للعمل بدون إنترنت ثبّت نسخة سطح المكتب — الويب يحتاج نت دائمًا
+                </p>
+              </div>
 
               <div className="mt-7 border-t border-slate-100 pt-4">
                 <button type="button" onClick={() => setShowApi((v) => !v)} className="flex w-full items-center justify-between text-xs font-semibold text-muted transition hover:text-slate-700">

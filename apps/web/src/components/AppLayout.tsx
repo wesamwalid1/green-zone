@@ -7,6 +7,8 @@ import { useTheme } from '../lib/theme';
 import { NAV_GROUPS, NAV_ITEMS, QUICK_ACTIONS, canAccess, displayJobLabel } from '../lib/nav';
 import { pushRecent } from '../lib/prefs';
 import { CommandPalette } from './CommandPalette';
+import { DesktopDownloadButton } from './DesktopDownloadButton';
+import { SyncStatusBar } from './SyncStatusBar';
 import { PageSkeleton } from './ui';
 import { Suspense } from 'react';
 
@@ -198,6 +200,11 @@ export function AppLayout() {
               <span className="truncate">بحث عام</span>
               <kbd className="ms-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] sm:inline">Ctrl K</kbd>
             </button>
+
+            <div className="hidden lg:block">
+              <SyncStatusBar />
+            </div>
+            <DesktopDownloadButton />
 
             <div className="relative">
               <button className="rounded-xl p-2 text-slate-600 hover:bg-slate-100" onClick={() => setQuickOpen((value) => !value)} title="إجراءات سريعة" aria-label="إجراءات سريعة">

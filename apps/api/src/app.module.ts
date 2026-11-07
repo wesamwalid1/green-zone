@@ -25,12 +25,14 @@ import { WorkModule } from './work/work.module';
 import { HrModule } from './hr/hr.module';
 import { ProductionModule } from './production/production.module';
 import { PartnersModule } from './partners/partners.module';
+import { SyncModule } from './sync/sync.module';
 import { HealthController } from './health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     PrismaModule,
+    SyncModule,
     AuthModule,
     UsersModule,
     WarehousesModule,

@@ -135,6 +135,8 @@ function buildEnv(dbUrl) {
     JWT_EXPIRES_IN: '30d',
     WEB_DIST: webDistDir(),
     ELECTRON_RUN: '1',
+    SYNC_MODE: 'desktop',
+    SYNC_PHASE: '1',
   };
   // امنع وراثة إعدادات Electron / السحابة اللي بتعطل node المستقل
   for (const key of [
