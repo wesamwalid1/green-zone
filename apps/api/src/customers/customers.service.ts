@@ -82,11 +82,11 @@ export class CustomersService implements OnModuleInit {
     const where: Prisma.CustomerWhereInput = parts.length > 1 ? { AND: parts } : parts[0] || {};
     const include = { warehouses: { include: { warehouse: true } } };
     if (!page) {
-      return this.prisma.customer.findMany({ where, include, orderBy: { name: 'asc' } });
+      return this.prisma.customer.findMany({ where, include, orderBy: { createdAt: 'desc' } });
     }
     const [total, items, all] = await Promise.all([
       this.prisma.customer.count({ where }),
-      this.prisma.customer.findMany({ where, include, orderBy: { name: 'asc' }, skip: page.skip, take: page.take }),
+      this.prisma.customer.findMany({ where, include, orderBy: { createdAt: 'desc' }, skip: page.skip, take: page.take }),
       this.prisma.customer.findMany({ where: scope || {}, select: { balance: true, isActive: true } }),
     ]);
     const summary = {

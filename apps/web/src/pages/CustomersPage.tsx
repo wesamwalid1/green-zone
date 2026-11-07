@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { CircleDollarSign, FileSignature, FileText, Hash, MapPin, Pencil, Phone, Plus, Printer, Users, Wallet, Warehouse } from 'lucide-react';
-import { exportInvoiceExcel, exportTableExcel } from '../lib/docExport';
+import { CircleDollarSign, CreditCard, Eye, FileDown, FileSignature, FileText, Hash, Mail, MapPin, Pencil, Phone, Plus, Printer, Users, Wallet, Warehouse } from 'lucide-react';
+import { exportTableExcel } from '../lib/docExport';
+import { afterPaint, runSilentPdf, runSilentPrint } from '../lib/silentDoc';
 import { api, formatDate, formatMoney, initialQuery } from '../lib/api';
 import { urgentInvoiceDate } from '../lib/due';
 import { DueAmount } from '../components/DueAmount';
 import { DocExportBar } from '../components/DocExportBar';
+import { SilentPrintMount } from '../components/SilentPrintMount';
 import { useFeedback } from '../lib/feedback';
 import { useColumns } from '../lib/columns';
 import { FilterOption, IconAction, ListBar } from '../components/ListBar';
@@ -13,7 +15,7 @@ import { EntityWorkspace } from '../components/EntityWorkspace';
 import { WarehouseMultiSelect } from '../components/WarehouseMultiSelect';
 import { StatementLedger } from '../components/StatementLedger';
 import {
-  Badge, Button, Card, Empty, Field, Input, Label, Modal, PageHeader, Pager, PrintHeader, Select, StatCard, StatGrid, Table, Td, Th, todayIso,
+  Badge, Button, Card, Empty, Field, Input, Label, Modal, NumberInput, PageHeader, Pager, PrintHeader, Select, StatCard, StatGrid, Table, Td, Textarea, Th, todayIso,
 } from '../components/ui';
 
 type Customer = {
@@ -45,13 +47,25 @@ type CustomerForm = {
   code: string;
   name: string;
   phone: string;
+  email: string;
   address: string;
+  creditLimit: number | '';
   priceList: string;
   isActive: boolean;
   warehouseIds: string[];
 };
 
-const emptyCustomer: CustomerForm = { code: '', name: '', phone: '', address: '', priceList: 'RETAIL', isActive: true, warehouseIds: [] };
+const emptyCustomer: CustomerForm = {
+  code: '',
+  name: '',
+  phone: '',
+  email: '',
+  address: '',
+  creditLimit: '',
+  priceList: 'RETAIL',
+  isActive: true,
+  warehouseIds: [],
+};
 const CUSTOMER_VIEW = 'm5azen.customersView';
 
 type StatementPayload = {
@@ -62,6 +76,77 @@ type StatementPayload = {
   prepaid?: number;
   meaning?: string;
 };
+
+function ContractDocument({ contract }: { contract: Contract }) {
+  return (
+    <div className="contract-sheet space-y-4">
+      <PrintHeader
+        title={contract.title}
+        subtitle={`رقم ${contract.number}`}
+        brand="Green Zone"
+        brandHint="للأسمدة والكيماويات"
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border-2 border-slate-300 bg-white px-4 py-3">
+          <div className="contract-field-label text-[11px] font-bold text-slate-500">تاريخ التعاقد</div>
+          <div className="mt-1 text-base font-extrabold text-slate-900" dir="ltr">{formatDate(contract.contractDate)}</div>
+        </div>
+        <div className="rounded-xl border-2 border-slate-300 bg-white px-4 py-3">
+          <div className="contract-field-label text-[11px] font-bold text-slate-500">رقم التعاقد</div>
+          <div className="mt-1 text-base font-extrabold text-brand-800" dir="ltr">{contract.number}</div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-3 border-b border-slate-200 pb-2 text-sm font-extrabold text-brand-800">بيانات العميل</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            ['اسم العميل', contract.customer.name],
+            ['كود العميل', contract.customer.code],
+            ['رقم الهاتف', contract.customer.phone || '—'],
+            ['البريد الإلكتروني', contract.customer.email || '—'],
+            ['العنوان', contract.customer.address || '—'],
+            ['قائمة السعر', contract.customer.priceList === 'WHOLESALE' ? 'جملة' : 'قطاعي'],
+            ['الرصيد الحالي', formatMoney(contract.customer.balance)],
+            ['حد الائتمان', formatMoney(contract.customer.creditLimit || 0)],
+            ['حالة العميل', contract.customer.isActive === false ? 'موقوف' : 'نشط'],
+            ['ملاحظات العميل', contract.customer.notes || '—'],
+            ['عنوان التعاقد', contract.title],
+            ['ملاحظات التعاقد', contract.notes || '—'],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <div className="text-[11px] font-bold text-slate-500">{label}</div>
+              <div className="mt-1 min-h-[1.5rem] whitespace-pre-wrap text-sm font-bold text-slate-900">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-300 bg-white p-4 text-sm leading-7 text-slate-800">
+        <div className="mb-2 font-extrabold text-brand-800">شروط التعاقد</div>
+        <div className="whitespace-pre-wrap break-words">
+          {contract.terms || 'يتعهد العميل بالتعامل مع شركة Green Zone وفق الشروط المتفق عليها، والالتزام بمواعيد السداد والكميات المعتمدة، ويقر بصحة بياناته الموضحة أعلاه.'}
+        </div>
+      </div>
+
+      <div className="mt-8 grid grid-cols-2 gap-8 print:mt-10">
+        <div className="rounded-xl border-2 border-dashed border-slate-400 bg-white p-4 text-center">
+          <div className="mb-2 text-xs font-bold text-slate-500">توقيع العميل</div>
+          <div className="mx-auto mb-3 flex h-20 w-full max-w-[14rem] items-end justify-center border-b-2 border-slate-500" />
+          <div className="font-extrabold text-slate-900">{contract.customer.name}</div>
+          <div className="mt-1 text-xs text-muted"><bdi dir="ltr">{contract.customer.phone || ''}</bdi></div>
+        </div>
+        <div className="rounded-xl border-2 border-dashed border-slate-400 bg-white p-4 text-center">
+          <div className="mb-2 text-xs font-bold text-slate-500">توقيع المدير</div>
+          <div className="mx-auto mb-3 flex h-20 w-full max-w-[14rem] items-end justify-center border-b-2 border-slate-500" />
+          <div className="font-extrabold text-slate-900">مدير Green Zone</div>
+          <div className="mt-1 text-xs text-muted">للأسمدة والكيماويات</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function CustomersPage() {
   const [tab, setTab] = useState<'customers' | 'contracts'>('customers');
@@ -87,7 +172,16 @@ export function CustomersPage() {
   const [contractSearch, setContractSearch] = useState('');
   const [contractOpen, setContractOpen] = useState(false);
   const [contractView, setContractView] = useState<Contract | null>(null);
-  const [contractForm, setContractForm] = useState({ customerId: '', contractDate: todayIso(), title: 'عقد توريد وتعامل', terms: '', notes: '' });
+  const [silentContract, setSilentContract] = useState<Contract | null>(null);
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+  const [contractForm, setContractForm] = useState({
+    customerId: '',
+    contractDate: todayIso(),
+    title: 'عقد توريد وتعامل',
+    terms: '',
+    customerNotes: '',
+    notes: '',
+  });
   const [contractSaving, setContractSaving] = useState(false);
   const [pickerCustomers, setPickerCustomers] = useState<Customer[]>([]);
   const feedback = useFeedback();
@@ -166,7 +260,9 @@ export function CustomersPage() {
       code: row.code,
       name: row.name,
       phone: row.phone || '',
+      email: row.email || '',
       address: row.address || '',
+      creditLimit: row.creditLimit ?? '',
       priceList: row.priceList || 'RETAIL',
       isActive: row.isActive !== false,
       warehouseIds: (row.warehouses || []).map((row) => row.warehouseId),
@@ -182,7 +278,9 @@ export function CustomersPage() {
         code: form.code.trim() || undefined,
         name: form.name.trim(),
         phone: form.phone.trim(),
+        email: form.email.trim() || undefined,
         address: form.address.trim(),
+        creditLimit: form.creditLimit === '' ? 0 : Number(form.creditLimit) || 0,
         priceList: form.priceList,
         warehouseIds: form.warehouseIds,
         ...(editingId ? { isActive: form.isActive } : {}),
@@ -193,7 +291,11 @@ export function CustomersPage() {
       });
       feedback.success(editingId ? 'تم تعديل العميل' : 'تم إضافة العميل');
       setOpen(false);
-      await load();
+      if (!editingId && listPage !== 1) {
+        setListPage(1);
+      } else {
+        await load();
+      }
     } catch (error) {
       feedback.error(error instanceof Error ? error.message : 'تعذر حفظ العميل');
     } finally {
@@ -235,20 +337,34 @@ export function CustomersPage() {
   }, [tab, contractSearch]);
 
   async function openNewContract(customerId = '') {
+    let list = items;
+    try {
+      const rows = await api<Customer[]>('/customers');
+      list = Array.isArray(rows) ? rows : items;
+      setPickerCustomers(list);
+    } catch {
+      setPickerCustomers(items);
+      list = items;
+    }
+    const selected = customerId ? list.find((c) => c.id === customerId) : undefined;
     setContractForm({
       customerId,
       contractDate: todayIso(),
       title: 'عقد توريد وتعامل',
       terms: '',
+      customerNotes: selected?.notes || '',
       notes: '',
     });
-    try {
-      const rows = await api<Customer[]>('/customers');
-      setPickerCustomers(Array.isArray(rows) ? rows : items);
-    } catch {
-      setPickerCustomers(items);
-    }
     setContractOpen(true);
+  }
+
+  function onContractCustomerChange(customerId: string) {
+    const selected = (pickerCustomers.length ? pickerCustomers : items).find((c) => c.id === customerId);
+    setContractForm((prev) => ({
+      ...prev,
+      customerId,
+      customerNotes: selected?.notes || '',
+    }));
   }
 
   async function saveContract() {
@@ -258,6 +374,10 @@ export function CustomersPage() {
     }
     setContractSaving(true);
     try {
+      await api(`/customers/${contractForm.customerId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ notes: contractForm.customerNotes.trim() }),
+      });
       const created = await api<Contract>('/customers/contracts', {
         method: 'POST',
         body: JSON.stringify({
@@ -271,7 +391,14 @@ export function CustomersPage() {
       feedback.success('تم إنشاء التعاقد');
       setContractOpen(false);
       await loadContracts();
-      setContractView(created);
+      await load().catch(() => undefined);
+      setContractView({
+        ...created,
+        customer: {
+          ...created.customer,
+          notes: contractForm.customerNotes.trim() || null,
+        },
+      });
     } catch (error) {
       feedback.error(error instanceof Error ? error.message : 'تعذر حفظ التعاقد');
     } finally {
@@ -297,27 +424,29 @@ export function CustomersPage() {
     });
   }
 
-  async function exportContractExcel(row: Contract) {
-    await exportInvoiceExcel({
-      fileName: `تعاقد-${row.number}.xlsx`,
-      title: row.title,
-      meta: [
-        ['رقم التعاقد', row.number],
-        ['التاريخ', formatDate(row.contractDate)],
-        ['اسم العميل', row.customer.name],
-        ['الكود', row.customer.code],
-        ['الهاتف', row.customer.phone || '—'],
-        ['البريد', row.customer.email || '—'],
-        ['العنوان', row.customer.address || '—'],
-        ['قائمة السعر', row.customer.priceList === 'WHOLESALE' ? 'جملة' : 'قطاعي'],
-        ['الرصيد', row.customer.balance],
-        ['حد الائتمان', row.customer.creditLimit || 0],
-        ['ملاحظات العميل', row.customer.notes || '—'],
-        ['ملاحظات التعاقد', row.notes || '—'],
-        ['الشروط', row.terms || '—'],
-      ],
-      lines: [],
-    });
+  async function viewContract(row: Contract) {
+    setContractView(row);
+  }
+
+  async function printContract(row: Contract) {
+    setSilentContract(row);
+    await afterPaint();
+    runSilentPrint(() => setSilentContract(null));
+  }
+
+  async function pdfContract(row: Contract) {
+    if (pdfBusyId) return;
+    setPdfBusyId(row.id);
+    setSilentContract(row);
+    await afterPaint();
+    try {
+      await runSilentPdf(`تعاقد-${row.number}.pdf`, () => setSilentContract(null));
+    } catch (err) {
+      feedback.error(err instanceof Error ? err.message : 'تعذر تنزيل PDF');
+      setSilentContract(null);
+    } finally {
+      setPdfBusyId(null);
+    }
   }
 
   async function bulk(isActive: boolean) {
@@ -539,8 +668,14 @@ export function CustomersPage() {
                     <Td className="max-w-xs truncate text-muted">{row.customer.address || '—'}</Td>
                     <Td>
                       <div className="flex gap-1">
-                        <IconAction label="عرض / طباعة" onClick={() => setContractView(row)}><Printer size={14} /></IconAction>
-                        <IconAction label="Excel" onClick={() => exportContractExcel(row)}><FileText size={14} /></IconAction>
+                        <IconAction label="عرض التعاقد" onClick={() => void viewContract(row)}><Eye size={14} /></IconAction>
+                        <IconAction label="طباعة" onClick={() => void printContract(row)}><Printer size={14} /></IconAction>
+                        <IconAction
+                          label={pdfBusyId === row.id ? 'جاري التنزيل…' : 'تنزيل PDF'}
+                          onClick={() => void pdfContract(row)}
+                        >
+                          <FileDown size={14} className={pdfBusyId === row.id ? 'animate-pulse' : undefined} />
+                        </IconAction>
                       </div>
                     </Td>
                   </tr>
@@ -562,8 +697,14 @@ export function CustomersPage() {
           <Field label="رقم الهاتف" icon={<Phone size={16} />} warning={form.phone && items.some((row) => row.id !== editingId && row.phone === form.phone.trim()) ? 'في عميل بنفس رقم الهاتف' : undefined}>
             <Input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
           </Field>
+          <Field label="البريد الإلكتروني" icon={<Mail size={16} />}>
+            <Input type="email" dir="ltr" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="name@example.com" />
+          </Field>
           <Field label="العنوان" icon={<MapPin size={16} />}>
             <Input value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+          </Field>
+          <Field label="حد الائتمان" icon={<CreditCard size={16} />} hint="الحد الأقصى للمديونية المسموح بها">
+            <NumberInput value={form.creditLimit} onValueChange={(creditLimit) => setForm({ ...form, creditLimit })} min={0} step="0.01" placeholder="0" />
           </Field>
           <Field label="قائمة السعر">
             <Select value={form.priceList} onChange={(event) => setForm({ ...form, priceList: event.target.value })}>
@@ -620,7 +761,7 @@ export function CustomersPage() {
       <Modal open={contractOpen} onClose={() => setContractOpen(false)} title="تعاقد جديد">
         <div className="space-y-3">
           <Field label="العميل">
-            <Select value={contractForm.customerId} onChange={(e) => setContractForm({ ...contractForm, customerId: e.target.value })}>
+            <Select value={contractForm.customerId} onChange={(e) => onContractCustomerChange(e.target.value)}>
               <option value="">اختر العميل</option>
               {(pickerCustomers.length ? pickerCustomers : items).map((c) => (
                 <option key={c.id} value={c.id}>{c.name} — {c.code}</option>
@@ -633,12 +774,36 @@ export function CustomersPage() {
           <Field label="عنوان التعاقد">
             <Input value={contractForm.title} onChange={(e) => setContractForm({ ...contractForm, title: e.target.value })} />
           </Field>
-          <Field label="الشروط (اختياري)">
-            <Input value={contractForm.terms} onChange={(e) => setContractForm({ ...contractForm, terms: e.target.value })} placeholder="يُستخدم النص الافتراضي لو فاضي" />
-          </Field>
-          <Field label="ملاحظات">
-            <Input value={contractForm.notes} onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })} />
-          </Field>
+          <div>
+            <Label>الشروط (اختياري)</Label>
+            <Textarea
+              rows={10}
+              className="min-h-[14rem] whitespace-pre-wrap"
+              value={contractForm.terms}
+              onChange={(e) => setContractForm({ ...contractForm, terms: e.target.value })}
+              placeholder="اكتب شروط التعاقد سطرًا بسطر — يُستخدم النص الافتراضي لو فاضي"
+            />
+          </div>
+          <div>
+            <Label>ملاحظات العميل</Label>
+            <Textarea
+              rows={3}
+              className="min-h-[5rem] whitespace-pre-wrap"
+              value={contractForm.customerNotes}
+              onChange={(e) => setContractForm({ ...contractForm, customerNotes: e.target.value })}
+              placeholder="تُحفظ على بيانات العميل وتظهر في التعاقد"
+            />
+          </div>
+          <div>
+            <Label>ملاحظات التعاقد</Label>
+            <Textarea
+              rows={3}
+              className="min-h-[5rem] whitespace-pre-wrap"
+              value={contractForm.notes}
+              onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })}
+              placeholder="ملاحظات خاصة بهذا التعاقد فقط"
+            />
+          </div>
           <Button className="w-full" disabled={contractSaving || !contractForm.customerId} onClick={saveContract}>
             حفظ وطباعة التعاقد
           </Button>
@@ -653,75 +818,17 @@ export function CustomersPage() {
               <div className="text-2xl font-extrabold">{contractView.number}</div>
               <div className="mt-1 text-sm text-brand-100">{contractView.customer.name} · {formatDate(contractView.contractDate)}</div>
             </div>
-            <DocExportBar pdfFileName={`تعاقد-${contractView.number}.pdf`} onExcel={() => exportContractExcel(contractView)} />
-
-            <div className="contract-sheet space-y-5">
-              <PrintHeader
-                title={contractView.title}
-                subtitle={`رقم ${contractView.number}`}
-                brand="Green Zone"
-                brandHint="للأسمدة والكيماويات"
-              />
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border-2 border-slate-300 bg-white px-4 py-3">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">تاريخ التعاقد</div>
-                  <div className="mt-1 text-base font-extrabold text-slate-900">{formatDate(contractView.contractDate)}</div>
-                </div>
-                <div className="rounded-xl border-2 border-slate-300 bg-white px-4 py-3">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">رقم التعاقد</div>
-                  <div className="mt-1 text-base font-extrabold text-brand-800" dir="ltr">{contractView.number}</div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="mb-3 border-b border-slate-200 pb-2 text-sm font-extrabold text-brand-800">بيانات العميل</h3>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {[
-                    ['اسم العميل', contractView.customer.name],
-                    ['كود العميل', contractView.customer.code],
-                    ['رقم الهاتف', contractView.customer.phone || '—'],
-                    ['البريد الإلكتروني', contractView.customer.email || '—'],
-                    ['العنوان', contractView.customer.address || '—'],
-                    ['قائمة السعر', contractView.customer.priceList === 'WHOLESALE' ? 'جملة' : 'قطاعي'],
-                    ['الرصيد الحالي', formatMoney(contractView.customer.balance)],
-                    ['حد الائتمان', formatMoney(contractView.customer.creditLimit || 0)],
-                    ['حالة العميل', contractView.customer.isActive === false ? 'موقوف' : 'نشط'],
-                    ['ملاحظات العميل', contractView.customer.notes || '—'],
-                    ['عنوان التعاقد', contractView.title],
-                    ['ملاحظات التعاقد', contractView.notes || '—'],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                      <div className="text-[11px] font-bold text-slate-500">{label}</div>
-                      <div className="mt-1 min-h-[1.5rem] text-sm font-bold text-slate-900">{value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-300 bg-white p-4 text-sm leading-7 text-slate-800">
-                <div className="mb-2 font-extrabold text-brand-800">شروط التعاقد</div>
-                {contractView.terms || 'يتعهد العميل بالتعامل مع شركة Green Zone وفق الشروط المتفق عليها، والالتزام بمواعيد السداد والكميات المعتمدة، ويقر بصحة بياناته الموضحة أعلاه.'}
-              </div>
-
-              <div className="mt-10 grid grid-cols-2 gap-8 print:mt-14">
-                <div className="rounded-xl border-2 border-dashed border-slate-400 bg-white p-4 text-center">
-                  <div className="mb-2 text-xs font-bold text-slate-500">توقيع العميل</div>
-                  <div className="mx-auto mb-3 flex h-20 w-full max-w-[14rem] items-end justify-center border-b-2 border-slate-500" />
-                  <div className="font-extrabold text-slate-900">{contractView.customer.name}</div>
-                  <div className="mt-1 text-xs text-muted"><bdi dir="ltr">{contractView.customer.phone || ''}</bdi></div>
-                </div>
-                <div className="rounded-xl border-2 border-dashed border-slate-400 bg-white p-4 text-center">
-                  <div className="mb-2 text-xs font-bold text-slate-500">توقيع المدير</div>
-                  <div className="mx-auto mb-3 flex h-20 w-full max-w-[14rem] items-end justify-center border-b-2 border-slate-500" />
-                  <div className="font-extrabold text-slate-900">مدير Green Zone</div>
-                  <div className="mt-1 text-xs text-muted">للأسمدة والكيماويات</div>
-                </div>
-              </div>
-            </div>
+            <DocExportBar pdfFileName={`تعاقد-${contractView.number}.pdf`} />
+            <ContractDocument contract={contractView} />
           </div>
         )}
       </Modal>
+
+      {silentContract && (
+        <SilentPrintMount>
+          <ContractDocument contract={silentContract} />
+        </SilentPrintMount>
+      )}
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Printer, Eye, Trash2, Pencil, ShoppingBag } from 'lucide-react';
 import { exportInvoiceExcel, exportTableExcel } from '../lib/docExport';
+import { afterPaint, runSilentPrint } from '../lib/silentDoc';
 import { api, formatDate, formatMoney, initialQuery } from '../lib/api';
 import { DueAmount } from '../components/DueAmount';
 import { DocExportBar } from '../components/DocExportBar';
 import { DualPrintCopies } from '../components/DualPrintCopies';
+import { SilentPrintMount } from '../components/SilentPrintMount';
 import { AddLineButton, EditorErrors, EditorSection, InvoiceEditor, LineCard, SummaryRow } from '../components/InvoiceEditor';
 import { ProductPicker } from '../components/ProductPicker';
 import { productsForWarehouse } from '../lib/productWarehouse';
@@ -115,6 +117,7 @@ export function PurchasesPage() {
   const [methods, setMethods] = useState<PayMethodOption[]>([]);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<Invoice | null>(null);
+  const [silentPrint, setSilentPrint] = useState<Invoice | null>(null);
   const [search, setSearch] = useState(initialQuery);
   const [status, setStatus] = useState<PurchaseFilter>('all');
   const [listView, setListView] = useState<'table' | 'cards'>(() => (localStorage.getItem(PURCHASE_VIEW) === 'cards' ? 'cards' : 'table'));
@@ -277,9 +280,10 @@ export function PurchasesPage() {
     }
   }
 
-  function printInvoice(inv: Invoice) {
-    setView(inv);
-    setTimeout(() => window.print(), 300);
+  async function printInvoice(inv: Invoice) {
+    setSilentPrint(inv);
+    await afterPaint();
+    runSilentPrint(() => setSilentPrint(null));
   }
 
   function editInvoice(inv: Invoice) {
@@ -698,45 +702,57 @@ export function PurchasesPage() {
               <Button variant="secondary" onClick={() => editInvoice(view)}><Pencil size={14} /> تعديل</Button>
               <Button variant="danger" onClick={() => removeInvoice(view.id)}><Trash2 size={14} /> حذف</Button>
             </div>
-            <DualPrintCopies dense={view.lines.length > 8} >
-              <PrintHeader title={`فاتورة شراء ${view.number}`} subtitle={view.supplier.name} />
-              <div className="mb-2 text-sm">
-                {view.supplier.name} · {view.warehouse.name} · {formatDate(view.invoiceDate)}
-              </div>
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>الصنف</Th>
-                    <Th>الكمية</Th>
-                    <Th>الوحدة</Th>
-                    <Th>سعر الشراء</Th>
-                    <Th>الإجمالي</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.lines.map((l, i) => (
-                    <tr key={i}>
-                      <Td>{l.product.name}</Td>
-                      <Td>{l.quantity}</Td>
-                      <Td>{l.invoiceUnit || l.product.unit || '—'}</Td>
-                      <Td>{formatMoney(l.unitCost)}</Td>
-                      <Td>{formatMoney(l.total)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-              <div className="mt-2 space-y-0.5 text-sm">
-                <div className="flex justify-between"><span>الإجمالي</span><span>{formatMoney(view.total)}</span></div>
-                <div className="flex justify-between"><span>المدفوع</span><span>{formatMoney(view.paidAmount)}</span></div>
-                <div className="flex justify-between font-bold">
-                  <span>المتبقي</span>
-                  <span>{formatMoney(view.status === 'CANCELLED' ? 0 : view.total - view.paidAmount)}</span>
-                </div>
-              </div>
-            </DualPrintCopies>
+            <PurchaseInvoicePrintSheet inv={view} />
           </div>
         )}
       </Modal>
+
+      {silentPrint && (
+        <SilentPrintMount>
+          <PurchaseInvoicePrintSheet inv={silentPrint} />
+        </SilentPrintMount>
+      )}
     </div>
+  );
+}
+
+function PurchaseInvoicePrintSheet({ inv }: { inv: Invoice }) {
+  return (
+    <DualPrintCopies dense={inv.lines.length > 8}>
+      <PrintHeader title={`فاتورة شراء ${inv.number}`} subtitle={inv.supplier.name} />
+      <div className="mb-2 text-sm">
+        {inv.supplier.name} · {inv.warehouse.name} · {formatDate(inv.invoiceDate)}
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>الصنف</Th>
+            <Th>الكمية</Th>
+            <Th>الوحدة</Th>
+            <Th>سعر الشراء</Th>
+            <Th>الإجمالي</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {inv.lines.map((l, i) => (
+            <tr key={i}>
+              <Td>{l.product.name}</Td>
+              <Td>{l.quantity}</Td>
+              <Td>{l.invoiceUnit || l.product.unit || '—'}</Td>
+              <Td>{formatMoney(l.unitCost)}</Td>
+              <Td>{formatMoney(l.total)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      <div className="mt-2 space-y-0.5 text-sm">
+        <div className="flex justify-between"><span>الإجمالي</span><span>{formatMoney(inv.total)}</span></div>
+        <div className="flex justify-between"><span>المدفوع</span><span>{formatMoney(inv.paidAmount)}</span></div>
+        <div className="flex justify-between font-bold">
+          <span>المتبقي</span>
+          <span>{formatMoney(inv.status === 'CANCELLED' ? 0 : inv.total - inv.paidAmount)}</span>
+        </div>
+      </div>
+    </DualPrintCopies>
   );
 }

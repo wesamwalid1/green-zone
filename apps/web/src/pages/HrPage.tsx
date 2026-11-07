@@ -13,9 +13,10 @@ import {
   Wallet,
 } from 'lucide-react';
 import { api, formatDate, formatMoney, getApiBase } from '../lib/api';
-import { triggerPdfSave, triggerPrint } from '../lib/docExport';
+import { afterPaint, runSilentPdf, runSilentPrint } from '../lib/silentDoc';
 import { useAccess } from '../lib/auth';
 import { useConfirm, useToast } from '../lib/feedback';
+import { SilentPrintMount } from '../components/SilentPrintMount';
 import {
   Badge,
   Button,
@@ -218,6 +219,7 @@ export function HrPage() {
   const [settingsForm, setSettingsForm] = useState<HrSettings | null>(null);
   const [printEmployeeLine, setPrintEmployeeLine] = useState<{ run: PayrollRun; line: PayrollLine } | null>(null);
   const [approvePrint, setApprovePrint] = useState<PayrollRun | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   function combineDateTime(date: string, time: string) {
     if (!date || !time) return null;
@@ -429,46 +431,79 @@ export function HrPage() {
     }
   }
 
-  function doPrint(runRow: PayrollRun) {
+  function clearSilentHr() {
+    setPrintRun(null);
     setPrintEmployeeLine(null);
     setApprovePrint(null);
+  }
+
+  async function doPrint(runRow: PayrollRun) {
+    clearSilentHr();
     setPrintRun(runRow);
-    setTimeout(() => triggerPrint(), 250);
+    await afterPaint(220);
+    runSilentPrint(clearSilentHr);
   }
 
-  function doPdf(runRow: PayrollRun) {
-    setPrintEmployeeLine(null);
-    setApprovePrint(null);
+  async function doPdf(runRow: PayrollRun) {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    clearSilentHr();
     setPrintRun(runRow);
-    setTimeout(() => void triggerPdfSave(`كشف-مرتبات-${runRow.number}.pdf`), 350);
+    await afterPaint(220);
+    try {
+      await runSilentPdf(`كشف-مرتبات-${runRow.number}.pdf`, clearSilentHr);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذر تنزيل PDF');
+      clearSilentHr();
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
-  function printEmployeeReport(runRow: PayrollRun, line: PayrollLine) {
-    setPrintRun(null);
-    setApprovePrint(null);
+  async function printEmployeeReport(runRow: PayrollRun, line: PayrollLine) {
+    clearSilentHr();
     setPrintEmployeeLine({ run: runRow, line });
-    setTimeout(() => triggerPrint(), 250);
+    await afterPaint(220);
+    runSilentPrint(clearSilentHr);
   }
 
-  function pdfEmployeeReport(runRow: PayrollRun, line: PayrollLine) {
-    setPrintRun(null);
-    setApprovePrint(null);
+  async function pdfEmployeeReport(runRow: PayrollRun, line: PayrollLine) {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    clearSilentHr();
     setPrintEmployeeLine({ run: runRow, line });
-    setTimeout(() => void triggerPdfSave(`مرتب-${line.employee?.code || line.employee?.name || line.employeeId}.pdf`), 350);
+    await afterPaint(220);
+    try {
+      await runSilentPdf(`مرتب-${line.employee?.code || line.employee?.name || line.employeeId}.pdf`, clearSilentHr);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذر تنزيل PDF');
+      clearSilentHr();
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
-  function printApproval(runRow: PayrollRun) {
-    setPrintRun(null);
-    setPrintEmployeeLine(null);
+  async function printApproval(runRow: PayrollRun) {
+    clearSilentHr();
     setApprovePrint(runRow);
-    setTimeout(() => triggerPrint(), 250);
+    await afterPaint(220);
+    runSilentPrint(clearSilentHr);
   }
 
-  function pdfApproval(runRow: PayrollRun) {
-    setPrintRun(null);
-    setPrintEmployeeLine(null);
+  async function pdfApproval(runRow: PayrollRun) {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    clearSilentHr();
     setApprovePrint(runRow);
-    setTimeout(() => void triggerPdfSave(`اعتماد-مرتبات-${runRow.number}.pdf`), 350);
+    await afterPaint(220);
+    try {
+      await runSilentPdf(`اعتماد-مرتبات-${runRow.number}.pdf`, clearSilentHr);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذر تنزيل PDF');
+      clearSilentHr();
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   if (!loaded) {
@@ -839,8 +874,10 @@ export function HrPage() {
                         {showAmounts && <span className="font-extrabold">{formatMoney(runRow.totalNet)}</span>}
                       </div>
                       <div className="flex flex-wrap gap-1 no-print">
-                        <Button size="sm" variant="secondary" onClick={() => doPrint(runRow)}><Printer size={14} /> طباعة</Button>
-                        <Button size="sm" variant="secondary" onClick={() => doPdf(runRow)}><Download size={14} /> PDF</Button>
+                        <Button size="sm" variant="secondary" onClick={() => void doPrint(runRow)}><Printer size={14} /> طباعة</Button>
+                        <Button size="sm" variant="secondary" disabled={pdfBusy} onClick={() => void doPdf(runRow)}>
+                          <Download size={14} /> {pdfBusy ? 'جاري التنزيل…' : 'PDF'}
+                        </Button>
                         {runRow.status === 'DRAFT' && can('hr', 'delete') && (
                           <Button size="sm" variant="danger" onClick={() => deleteRun(runRow)}><Trash2 size={14} /></Button>
                         )}
@@ -885,11 +922,11 @@ export function HrPage() {
                     {showAmounts && <div className="mt-1 text-xl font-black text-brand-900">إجمالي الصرف: {formatMoney(runRow.totalNet)}</div>}
                   </div>
                   <div className="flex flex-wrap gap-2 no-print">
-                    <Button variant="secondary" onClick={() => printApproval(runRow)}>
+                    <Button variant="secondary" onClick={() => void printApproval(runRow)}>
                       <Printer size={14} /> طباعة الاعتماد + توقيع
                     </Button>
-                    <Button variant="secondary" onClick={() => pdfApproval(runRow)}>
-                      <Download size={14} /> PDF الاعتماد
+                    <Button variant="secondary" disabled={pdfBusy} onClick={() => void pdfApproval(runRow)}>
+                      <Download size={14} /> {pdfBusy ? 'جاري التنزيل…' : 'PDF الاعتماد'}
                     </Button>
                     {runRow.status === 'DRAFT' && can('hr', 'post') && (
                       <Button disabled={busy} onClick={() => postRun(runRow)}>اعتماد وصرف المرتبات</Button>
@@ -907,11 +944,11 @@ export function HrPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           {showAmounts && <div className="text-lg font-black text-emerald-800">{formatMoney(line.net)}</div>}
-                          <Button size="sm" variant="secondary" className="no-print" onClick={() => printEmployeeReport(runRow, line)}>
+                          <Button size="sm" variant="secondary" className="no-print" onClick={() => void printEmployeeReport(runRow, line)}>
                             <Printer size={13} /> تقرير الموظف
                           </Button>
-                          <Button size="sm" variant="secondary" className="no-print" onClick={() => pdfEmployeeReport(runRow, line)}>
-                            <Download size={13} /> PDF
+                          <Button size="sm" variant="secondary" className="no-print" disabled={pdfBusy} onClick={() => void pdfEmployeeReport(runRow, line)}>
+                            <Download size={13} /> {pdfBusy ? 'جاري التنزيل…' : 'PDF'}
                           </Button>
                         </div>
                       </div>
@@ -1109,77 +1146,83 @@ export function HrPage() {
       </Modal>
 
       {printRun && (
-        <div className="print-only fixed inset-0 z-50 bg-white p-6 text-black">
-          <PrintHeader title={`كشف مرتبات ${printRun.number}`} subtitle={`${formatDate(printRun.fromDate)} ← ${formatDate(printRun.toDate)} · ${printRun.status === 'POSTED' ? 'مرحّل' : 'مسودة'}`} />
-          <p className="mb-3 text-sm text-slate-600">الصافي = (مستحق الراتب + مكافآت − خصومات − سلف − تأخير − إذن + إضافي) + عمولة</p>
-          <PayrollTable lines={printRun.lines} showSalary showAmounts detailed />
-          <div className="mt-4 text-left text-lg font-black">الإجمالي: {formatMoney(printRun.totalNet)}</div>
-        </div>
+        <SilentPrintMount>
+          <div className="bg-white p-6 text-black">
+            <PrintHeader title={`كشف مرتبات ${printRun.number}`} subtitle={`${formatDate(printRun.fromDate)} ← ${formatDate(printRun.toDate)} · ${printRun.status === 'POSTED' ? 'مرحّل' : 'مسودة'}`} />
+            <p className="mb-3 text-sm text-slate-600">الصافي = (مستحق الراتب + مكافآت − خصومات − سلف − تأخير − إذن + إضافي) + عمولة</p>
+            <PayrollTable lines={printRun.lines} showSalary showAmounts detailed />
+            <div className="mt-4 text-left text-lg font-black">الإجمالي: {formatMoney(printRun.totalNet)}</div>
+          </div>
+        </SilentPrintMount>
       )}
 
       {printEmployeeLine && (
-        <div className="print-only fixed inset-0 z-50 bg-white p-6 text-black">
-          <PrintHeader
-            title={`تقرير راتب — ${lineName(printEmployeeLine.line)}`}
-            subtitle={`${printEmployeeLine.run.number} · ${formatDate(printEmployeeLine.run.fromDate)} ← ${formatDate(printEmployeeLine.run.toDate)}`}
-          />
-          <div className="mb-4 grid gap-2 text-sm sm:grid-cols-2">
-            <div>الكود: <b dir="ltr">{lineCode(printEmployeeLine.line)}</b></div>
-            <div>الراتب الأساسي: <b>{formatMoney(printEmployeeLine.line.salary || 0)}</b></div>
-            <div>أيام الحضور: <b>{printEmployeeLine.line.presentDays}</b></div>
-            <div>أيام الإجازة المدفوعة: <b>{printEmployeeLine.line.paidLeaveDays}</b></div>
-            <div>أيام الغياب: <b>{printEmployeeLine.line.absentDays}</b></div>
-            <div>أيام الإذن: <b>{printEmployeeLine.line.permissionDays}</b></div>
-            <div>ساعات الإضافي: <b>{printEmployeeLine.line.overtimeHours ?? 0}</b> · قيمة: <b>{formatMoney(printEmployeeLine.line.overtimePay || 0)}</b></div>
-            <div>مستحق الفترة: <b>{formatMoney(printEmployeeLine.line.earned)}</b></div>
-            <div>مكافآت: <b>{formatMoney(printEmployeeLine.line.bonuses)}</b></div>
-            <div>سلف: <b>{formatMoney(printEmployeeLine.line.advances)}</b></div>
-            <div>خصومات: <b>{formatMoney(printEmployeeLine.line.deductions)}</b></div>
-            <div>تأخير + إذن: <b>{formatMoney((printEmployeeLine.line.latePenalty || 0) + (printEmployeeLine.line.permissionDeduct || 0))}</b></div>
-            <div>صافي الراتب: <b>{formatMoney(printEmployeeLine.line.salaryNet)}</b></div>
-            <div>عمولة: <b>{formatMoney(printEmployeeLine.line.commissionDue)}</b></div>
-          </div>
-          <div className="rounded-xl border-2 border-black px-4 py-3 text-xl font-black">
-            الصافي للصرف: {formatMoney(printEmployeeLine.line.net)}
-          </div>
-          <div className="mt-16 grid grid-cols-2 gap-10 text-sm">
-            <div className="text-center">
-              <div className="mb-16 border-b border-black" />
-              <div className="font-bold">توقيع الموظف</div>
+        <SilentPrintMount>
+          <div className="bg-white p-6 text-black">
+            <PrintHeader
+              title={`تقرير راتب — ${lineName(printEmployeeLine.line)}`}
+              subtitle={`${printEmployeeLine.run.number} · ${formatDate(printEmployeeLine.run.fromDate)} ← ${formatDate(printEmployeeLine.run.toDate)}`}
+            />
+            <div className="mb-4 grid gap-2 text-sm sm:grid-cols-2">
+              <div>الكود: <b dir="ltr">{lineCode(printEmployeeLine.line)}</b></div>
+              <div>الراتب الأساسي: <b>{formatMoney(printEmployeeLine.line.salary || 0)}</b></div>
+              <div>أيام الحضور: <b>{printEmployeeLine.line.presentDays}</b></div>
+              <div>أيام الإجازة المدفوعة: <b>{printEmployeeLine.line.paidLeaveDays}</b></div>
+              <div>أيام الغياب: <b>{printEmployeeLine.line.absentDays}</b></div>
+              <div>أيام الإذن: <b>{printEmployeeLine.line.permissionDays}</b></div>
+              <div>ساعات الإضافي: <b>{printEmployeeLine.line.overtimeHours ?? 0}</b> · قيمة: <b>{formatMoney(printEmployeeLine.line.overtimePay || 0)}</b></div>
+              <div>مستحق الفترة: <b>{formatMoney(printEmployeeLine.line.earned)}</b></div>
+              <div>مكافآت: <b>{formatMoney(printEmployeeLine.line.bonuses)}</b></div>
+              <div>سلف: <b>{formatMoney(printEmployeeLine.line.advances)}</b></div>
+              <div>خصومات: <b>{formatMoney(printEmployeeLine.line.deductions)}</b></div>
+              <div>تأخير + إذن: <b>{formatMoney((printEmployeeLine.line.latePenalty || 0) + (printEmployeeLine.line.permissionDeduct || 0))}</b></div>
+              <div>صافي الراتب: <b>{formatMoney(printEmployeeLine.line.salaryNet)}</b></div>
+              <div>عمولة: <b>{formatMoney(printEmployeeLine.line.commissionDue)}</b></div>
             </div>
-            <div className="text-center">
-              <div className="mb-16 border-b border-black" />
-              <div className="font-bold">توقيع المسؤول للصرف</div>
+            <div className="rounded-xl border-2 border-black px-4 py-3 text-xl font-black">
+              الصافي للصرف: {formatMoney(printEmployeeLine.line.net)}
+            </div>
+            <div className="mt-16 grid grid-cols-2 gap-10 text-sm">
+              <div className="text-center">
+                <div className="mb-16 border-b border-black" />
+                <div className="font-bold">توقيع الموظف</div>
+              </div>
+              <div className="text-center">
+                <div className="mb-16 border-b border-black" />
+                <div className="font-bold">توقيع المسؤول للصرف</div>
+              </div>
             </div>
           </div>
-        </div>
+        </SilentPrintMount>
       )}
 
       {approvePrint && (
-        <div className="print-only fixed inset-0 z-50 bg-white p-6 text-black">
-          <PrintHeader
-            title={`اعتماد صرف مرتبات — ${approvePrint.number}`}
-            subtitle={`${formatDate(approvePrint.fromDate)} ← ${formatDate(approvePrint.toDate)}`}
-          />
-          <p className="mb-3 text-sm">كشف اعتماد المرتبات للمراجعة والتوقيع قبل الصرف</p>
-          <PayrollTable lines={approvePrint.lines} showSalary showAmounts detailed />
-          <div className="mt-3 text-left text-lg font-black">إجمالي الاعتماد: {formatMoney(approvePrint.totalNet)}</div>
-          <div className="mt-14 grid grid-cols-3 gap-8 text-sm">
-            <div className="text-center">
-              <div className="mb-16 border-b border-black" />
-              <div className="font-bold">إعداد الموارد البشرية</div>
+        <SilentPrintMount>
+          <div className="bg-white p-6 text-black">
+            <PrintHeader
+              title={`اعتماد صرف مرتبات — ${approvePrint.number}`}
+              subtitle={`${formatDate(approvePrint.fromDate)} ← ${formatDate(approvePrint.toDate)}`}
+            />
+            <p className="mb-3 text-sm">كشف اعتماد المرتبات للمراجعة والتوقيع قبل الصرف</p>
+            <PayrollTable lines={approvePrint.lines} showSalary showAmounts detailed />
+            <div className="mt-3 text-left text-lg font-black">إجمالي الاعتماد: {formatMoney(approvePrint.totalNet)}</div>
+            <div className="mt-14 grid grid-cols-3 gap-8 text-sm">
+              <div className="text-center">
+                <div className="mb-16 border-b border-black" />
+                <div className="font-bold">إعداد الموارد البشرية</div>
+              </div>
+              <div className="text-center">
+                <div className="mb-16 border-b border-black" />
+                <div className="font-bold">مراجعة الحسابات</div>
+              </div>
+              <div className="text-center">
+                <div className="mb-16 border-b border-black" />
+                <div className="font-bold">اعتماد المسؤول للصرف</div>
+              </div>
             </div>
-            <div className="text-center">
-              <div className="mb-16 border-b border-black" />
-              <div className="font-bold">مراجعة الحسابات</div>
-            </div>
-            <div className="text-center">
-              <div className="mb-16 border-b border-black" />
-              <div className="font-bold">اعتماد المسؤول للصرف</div>
-            </div>
+            <p className="mt-8 text-xs text-slate-600">تم اعتماد صرف المرتبات المذكورة أعلاه بتاريخ ................ / ................ / ................</p>
           </div>
-          <p className="mt-8 text-xs text-slate-600">تم اعتماد صرف المرتبات المذكورة أعلاه بتاريخ ................ / ................ / ................</p>
-        </div>
+        </SilentPrintMount>
       )}
     </div>
   );

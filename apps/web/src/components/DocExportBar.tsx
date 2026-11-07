@@ -35,7 +35,7 @@ export function DocExportBar({
         }}
         title="تنزيل ملف PDF مباشرة"
       >
-        <Download size={14} /> {busyPdf ? 'جاري PDF…' : 'تنزيل PDF'}
+        <Download size={14} /> {busyPdf ? 'جاري التنزيل…' : 'تنزيل PDF'}
       </Button>
       {onExcel && (
         <Button variant="secondary" onClick={() => void onExcel()}>

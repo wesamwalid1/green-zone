@@ -1,4 +1,4 @@
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { AlertOctagon, CalendarRange, ChevronLeft, ChevronRight, Inbox, RotateCcw, X } from 'lucide-react';
@@ -239,6 +239,16 @@ export function Select({ className = '', children, ...props }: SelectHTMLAttribu
     <select className={`select-control h-10 cursor-pointer ${CONTROL} ${className}`} {...props}>
       {children}
     </select>
+  );
+}
+
+export function Textarea({ className = '', rows = 6, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      rows={rows}
+      className={`min-h-[9rem] resize-y py-2.5 leading-relaxed ${CONTROL} ${className}`}
+      {...props}
+    />
   );
 }
 
@@ -493,19 +503,38 @@ export function PrintHeader({
   brand?: string;
   brandHint?: string;
 }) {
+  const printedAt = new Date().toLocaleString('en-GB', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
   return (
-    <div className="print-header mb-6 flex items-center justify-between border-b-2 border-brand-800 pb-4">
-      <div className="flex items-center gap-3">
+    <div className="print-header relative mb-6 w-full border-b-2 border-brand-800 pb-4">
+      <div className="print-meta absolute left-0 top-0 text-left text-xs font-semibold tabular-nums text-slate-500" dir="ltr">
+        {printedAt}
+      </div>
+      <div className="print-brand absolute right-0 top-0 flex items-center gap-3" dir="rtl">
         <BrandMark size="lg" />
-        <div>
+        <div className="min-w-0 text-start">
           <div className="brand-title text-xl font-black tracking-tight text-brand-900">{brand}</div>
           {brandHint && <div className="brand-hint text-[11px] font-bold text-slate-500">{brandHint}</div>}
           <div className="mt-1 text-base font-extrabold text-brand-800">{title}</div>
           {subtitle && <div className="text-sm font-semibold text-slate-600">{subtitle}</div>}
         </div>
       </div>
-      <div className="text-left text-xs font-semibold text-slate-500" dir="ltr">
-        {new Date().toLocaleString('ar-EG', { numberingSystem: 'latn' })}
+      {/* يحجز ارتفاع الترويسة لأن المحتوى absolute */}
+      <div className="print-header-spacer invisible flex items-center gap-3" aria-hidden dir="rtl">
+        <BrandMark size="lg" />
+        <div className="min-w-0 text-start">
+          <div className="brand-title text-xl font-black">{brand}</div>
+          {brandHint && <div className="brand-hint text-[11px] font-bold">{brandHint}</div>}
+          <div className="mt-1 text-base font-extrabold">{title}</div>
+          {subtitle && <div className="text-sm font-semibold">{subtitle}</div>}
+        </div>
       </div>
     </div>
   );

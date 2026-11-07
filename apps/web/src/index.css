@@ -77,9 +77,11 @@ body {
   .no-print {
     display: none !important;
   }
-  .print-only,
-  .print-header {
+  .print-only {
     display: flex !important;
+  }
+  .print-header {
+    display: block !important;
   }
   html, body, #root {
     height: auto !important;
@@ -143,34 +145,38 @@ body {
   }
 
   .modal-backdrop {
-    position: static !important;
-    inset: auto !important;
+    position: fixed !important;
+    inset: 0 !important;
     display: block !important;
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    background: transparent !important;
+    background: white !important;
     backdrop-filter: none !important;
     overflow: visible !important;
+    z-index: 99999 !important;
   }
 
   /* ارتفاع الجسم = ارتفاع الكشف/الفاتورة عشان الطباعة ما تتقطعش */
   body:has(.print-sheet),
   body.is-printing {
-    min-height: var(--print-sheet-h, auto) !important;
+    min-height: 0 !important;
     height: auto !important;
     overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
+  /* ثبّت المحتوى أعلى الصفحة المطبوعة (مش في نص الورقة) */
   .print-sheet,
   .print-sheet.modal-panel {
-    position: absolute !important;
+    position: fixed !important;
     left: 0 !important;
     top: 0 !important;
     right: 0 !important;
-    inset: auto auto auto 0 !important;
+    inset: 0 0 auto 0 !important;
     display: block !important;
     width: 100% !important;
     max-width: 100% !important;
@@ -184,6 +190,7 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     background: white !important;
+    z-index: 100000 !important;
   }
 
   .print-sheet .modal-body {
@@ -195,14 +202,53 @@ body {
     min-height: 0 !important;
   }
 
-  /* لوجو الطباعة واضح */
+  /* تعاقد: يبدأ من أعلى الصفحة بدون فراغ علوي */
+  .contract-sheet {
+    margin: 0 !important;
+    padding: 4mm 6mm !important;
+  }
+  .print-sheet:has(.contract-sheet) > .no-print,
+  .print-sheet:has(.contract-sheet) .no-print {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+
+  /* لوجو الطباعة واضح + التاريخ مثبت أعلى اليسار */
   .print-header {
-    align-items: center !important;
-    gap: 12px !important;
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
     margin-bottom: 10px !important;
     padding-bottom: 8px !important;
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+  .print-header .print-meta {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: auto !important;
+    direction: ltr !important;
+    text-align: left !important;
+    font-variant-numeric: tabular-nums !important;
+    white-space: nowrap !important;
+  }
+  .print-header .print-brand {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    left: auto !important;
+    display: flex !important;
+    direction: rtl !important;
+    align-items: center !important;
+    gap: 12px !important;
+    max-width: calc(100% - 9rem) !important;
+  }
+  .print-header .print-header-spacer {
+    visibility: hidden !important;
   }
   .print-header .brand-mark {
     width: 72px !important;
@@ -212,6 +258,11 @@ body {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+  .contract-field-label {
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    font-variant: normal !important;
   }
   .print-header .brand-mark img,
   .print-header img {
@@ -432,14 +483,65 @@ body {
   display: none;
 }
 
+/* طباعة/PDF صامتة من القائمة بدون فتح شاشة البيانات ولا وميض على الشاشة */
+.silent-print-mount,
+.contract-silent-mount {
+  position: fixed !important;
+  left: -12000px !important;
+  top: 0 !important;
+  width: 794px !important;
+  background: #fff !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+  overflow: visible !important;
+}
+
+@media print {
+  .silent-print-mount,
+  .contract-silent-mount {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 100001 !important;
+    background: #fff !important;
+  }
+}
+
 /* التقاط PDF: نفس محتوى الطباعة (لوجو ظاهر، أزرار مخفية) */
 body.pdf-capture .no-print {
   display: none !important;
 }
 body.pdf-capture .print-header,
 body.pdf-capture .print-only {
-  display: flex !important;
+  display: block !important;
   visibility: visible !important;
+}
+body.pdf-capture .print-header .print-meta {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: auto !important;
+  direction: ltr !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+}
+body.pdf-capture .print-header .print-brand {
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  left: auto !important;
+  display: flex !important;
+  direction: rtl !important;
+  align-items: center !important;
+}
+body.pdf-capture .print-header .print-header-spacer {
+  visibility: hidden !important;
+}
+body.pdf-capture .contract-field-label {
+  letter-spacing: normal !important;
+  text-transform: none !important;
 }
 body.pdf-capture aside,
 body.pdf-capture nav {
@@ -456,6 +558,15 @@ body.pdf-capture .statement-sheet {
   max-height: none !important;
   overflow: visible !important;
   height: auto !important;
+}
+body.pdf-capture .print-sheet .modal-body {
+  padding: 0 !important;
+  overflow: visible !important;
+  max-height: none !important;
+}
+body.pdf-capture .contract-sheet {
+  margin: 0 !important;
+  padding: 8px 12px !important;
 }
 body.pdf-capture .print-header .brand-mark {
   width: 72px !important;

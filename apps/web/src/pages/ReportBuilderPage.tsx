@@ -38,6 +38,7 @@ export function ReportBuilderPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const spec = modules.find((item) => item.key === definition.module);
 
@@ -231,7 +232,21 @@ export function ReportBuilderPage() {
                   <Button size="sm" variant="secondary" disabled={!preview} onClick={() => download('xlsx')}><FileSpreadsheet size={14} /> Excel</Button>
                   <Button size="sm" variant="secondary" disabled={!preview} onClick={() => download('csv')}>CSV</Button>
                   <Button size="sm" variant="secondary" disabled={!preview} onClick={() => triggerPrint()}><Printer size={14} /> طباعة</Button>
-                  <Button size="sm" variant="secondary" disabled={!preview} onClick={() => void triggerPdfSave('تقرير-مخصص.pdf')}><Download size={14} /> تنزيل PDF</Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!preview || pdfBusy}
+                    onClick={async () => {
+                      setPdfBusy(true);
+                      try {
+                        await triggerPdfSave('تقرير-مخصص.pdf');
+                      } finally {
+                        setPdfBusy(false);
+                      }
+                    }}
+                  >
+                    <Download size={14} /> {pdfBusy ? 'جاري التنزيل…' : 'تنزيل PDF'}
+                  </Button>
                 </>
               }
             />

@@ -192,6 +192,7 @@ export function ProductionPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [rawStock, setRawStock] = useState<RawStock | null>(null);
@@ -630,8 +631,23 @@ export function ProductionPage() {
                     <Button type="button" variant="secondary" size="sm" onClick={() => triggerPrint()}>
                       <Printer size={14} /> طباعة نموذج المرحلة
                     </Button>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => void triggerPdfSave(`مرحلة-${job.stageLabels[currentKind]}-${job.number}.pdf`)}>
-                      تنزيل PDF
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={pdfBusy}
+                      onClick={async () => {
+                        setPdfBusy(true);
+                        try {
+                          await triggerPdfSave(`مرحلة-${job.stageLabels[currentKind]}-${job.number}.pdf`);
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : 'تعذر تنزيل PDF');
+                        } finally {
+                          setPdfBusy(false);
+                        }
+                      }}
+                    >
+                      {pdfBusy ? 'جاري التنزيل…' : 'تنزيل PDF'}
                     </Button>
                   </div>
                 </div>

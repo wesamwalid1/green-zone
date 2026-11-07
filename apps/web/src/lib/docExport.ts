@@ -16,16 +16,125 @@ function resolvePdfTarget(): HTMLElement {
   const dualPrimary = document.querySelector<HTMLElement>('.print-sheet .dual-print-primary, .dual-print-primary');
   if (dualPrimary) return dualPrimary;
 
-  const printSheet = document.querySelector<HTMLElement>('.print-sheet');
-  if (printSheet) return printSheet;
+  const silentMount = document.querySelector<HTMLElement>(
+    '.silent-print-mount .print-sheet, .silent-print-mount .contract-sheet, .contract-silent-mount .print-sheet, .contract-silent-mount .contract-sheet',
+  );
+  if (silentMount) return silentMount;
+
+  const contractSheet = document.querySelector<HTMLElement>('.contract-sheet');
+  if (contractSheet) return contractSheet;
 
   const statement = document.querySelector<HTMLElement>('.statement-sheet');
   if (statement) return statement;
+
+  const printSheet = document.querySelector<HTMLElement>('.print-sheet');
+  if (printSheet) return printSheet;
 
   const main = document.querySelector<HTMLElement>('main');
   if (main) return main;
 
   return document.body;
+}
+
+const UNSUPPORTED_COLOR = /oklch|oklab|lab\(|lch\(|color-mix\(/i;
+
+/** يحوّل ألوان Tailwind v4 (oklch) لصيغ يفهمها html2canvas */
+function toCanvasSafeColor(color: string, fallback: string): string {
+  if (!color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)') return color || fallback;
+  if (!UNSUPPORTED_COLOR.test(color)) return color;
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return fallback;
+    ctx.fillStyle = '#000000';
+    ctx.fillStyle = color;
+    const normalized = String(ctx.fillStyle || '');
+    if (!normalized || UNSUPPORTED_COLOR.test(normalized)) return fallback;
+    return normalized;
+  } catch {
+    return fallback;
+  }
+}
+
+function sanitizeCloneForPdf(root: HTMLElement, view: Window) {
+  root.querySelectorAll('.no-print').forEach((el) => el.remove());
+
+  const colorProps = [
+    'color',
+    'background-color',
+    'border-top-color',
+    'border-right-color',
+    'border-bottom-color',
+    'border-left-color',
+    'outline-color',
+    'text-decoration-color',
+    'column-rule-color',
+    'caret-color',
+    'fill',
+    'stroke',
+  ] as const;
+
+  const nodes = [root, ...Array.from(root.querySelectorAll('*'))];
+  for (const node of nodes) {
+    if (!(node instanceof HTMLElement)) continue;
+    const cs = view.getComputedStyle(node);
+    for (const prop of colorProps) {
+      const value = cs.getPropertyValue(prop);
+      if (!value || !UNSUPPORTED_COLOR.test(value)) continue;
+      const fallback = prop.includes('background') ? '#ffffff' : '#0f172a';
+      node.style.setProperty(prop, toCanvasSafeColor(value, fallback), 'important');
+    }
+
+    const bgImage = cs.getPropertyValue('background-image');
+    if (bgImage && UNSUPPORTED_COLOR.test(bgImage)) {
+      node.style.setProperty('background-image', 'none', 'important');
+    }
+
+    node.style.setProperty('box-shadow', 'none', 'important');
+    // letter-spacing / uppercase بتكسر رسم الحروف العربية في html2canvas
+    if (cs.getPropertyValue('letter-spacing') && cs.getPropertyValue('letter-spacing') !== 'normal') {
+      node.style.setProperty('letter-spacing', 'normal', 'important');
+    }
+    if (cs.getPropertyValue('text-transform') && cs.getPropertyValue('text-transform') !== 'none') {
+      node.style.setProperty('text-transform', 'none', 'important');
+    }
+    if (cs.getPropertyValue('backdrop-filter') && cs.getPropertyValue('backdrop-filter') !== 'none') {
+      node.style.setProperty('backdrop-filter', 'none', 'important');
+    }
+  }
+
+  root.querySelectorAll('.print-header, .print-only').forEach((el) => {
+    const node = el as HTMLElement;
+    node.style.setProperty('display', 'block', 'important');
+    node.style.setProperty('visibility', 'visible', 'important');
+    node.style.setProperty('position', 'relative', 'important');
+    node.style.setProperty('width', '100%', 'important');
+  });
+
+  root.querySelectorAll('.print-meta').forEach((el) => {
+    const node = el as HTMLElement;
+    node.style.setProperty('position', 'absolute', 'important');
+    node.style.setProperty('left', '0', 'important');
+    node.style.setProperty('top', '0', 'important');
+    node.style.setProperty('right', 'auto', 'important');
+    node.style.setProperty('direction', 'ltr', 'important');
+    node.style.setProperty('text-align', 'left', 'important');
+    node.style.setProperty('white-space', 'nowrap', 'important');
+  });
+
+  root.querySelectorAll('.print-brand').forEach((el) => {
+    const node = el as HTMLElement;
+    node.style.setProperty('position', 'absolute', 'important');
+    node.style.setProperty('top', '0', 'important');
+    node.style.setProperty('right', '0', 'important');
+    node.style.setProperty('left', 'auto', 'important');
+    node.style.setProperty('display', 'flex', 'important');
+    node.style.setProperty('direction', 'rtl', 'important');
+    node.style.setProperty('align-items', 'center', 'important');
+  });
+
+  root.querySelectorAll('.print-header-spacer').forEach((el) => {
+    (el as HTMLElement).style.setProperty('visibility', 'hidden', 'important');
+  });
 }
 
 /** تنزيل PDF فعلي للشاشة القابلة للطباعة (مش نافذة الطباعة) */
@@ -35,53 +144,68 @@ export async function triggerPdfSave(fileName = defaultPdfName()) {
     import('jspdf'),
   ]);
 
-  const target = resolvePdfTarget();
-  document.body.classList.add('pdf-capture');
-  const prevOverflow = target.style.overflow;
-  const prevMaxHeight = target.style.maxHeight;
-  const prevHeight = target.style.height;
-  target.style.overflow = 'visible';
-  target.style.maxHeight = 'none';
-  target.style.height = 'auto';
+  const source = resolvePdfTarget();
+  if (!source || source.childElementCount === 0 && !source.textContent?.trim()) {
+    throw new Error('لا يوجد محتوى لتصديره إلى PDF');
+  }
+
+  const host = document.createElement('div');
+  host.setAttribute('data-pdf-capture-host', '1');
+  // خارج الشاشة عشان المستخدم ما يشوفش وميض الورقة أثناء الرسم
+  Object.assign(host.style, {
+    position: 'fixed',
+    left: '-12000px',
+    top: '0',
+    width: '794px',
+    background: '#ffffff',
+    color: '#0f172a',
+    zIndex: '-1',
+    padding: '20px',
+    margin: '0',
+    overflow: 'visible',
+    direction: 'rtl',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    opacity: '1',
+  } as CSSStyleDeclaration);
+
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.style.maxHeight = 'none';
+  clone.style.height = 'auto';
+  clone.style.overflow = 'visible';
+  clone.style.boxShadow = 'none';
+  clone.style.borderRadius = '0';
+  clone.style.margin = '0';
+  clone.style.transform = 'none';
+  host.appendChild(clone);
+  document.body.appendChild(host);
 
   try {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    sanitizeCloneForPdf(clone, window);
 
-    const canvas = await html2canvas(target, {
+    const canvas = await html2canvas(host, {
       scale: 2,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
       scrollX: 0,
-      scrollY: -window.scrollY,
-      windowWidth: document.documentElement.scrollWidth,
-      onclone: (doc) => {
-        doc.body.classList.add('pdf-capture');
-        doc.querySelectorAll('.no-print').forEach((el) => {
+      scrollY: 0,
+      windowWidth: host.scrollWidth,
+      windowHeight: host.scrollHeight,
+      onclone: (doc, element) => {
+        const view = doc.defaultView || window;
+        sanitizeCloneForPdf(element as HTMLElement, view);
+        doc.querySelectorAll('aside, nav, [data-pdf-capture-host] ~ *').forEach((el) => {
           (el as HTMLElement).style.setProperty('display', 'none', 'important');
         });
-        doc.querySelectorAll('.print-header, .print-only').forEach((el) => {
-          const node = el as HTMLElement;
-          node.style.setProperty('display', 'flex', 'important');
-          node.style.setProperty('visibility', 'visible', 'important');
-        });
-        doc.querySelectorAll('.dual-print-clone').forEach((el) => {
-          (el as HTMLElement).style.setProperty('display', 'none', 'important');
-        });
-        doc.querySelectorAll('aside, nav').forEach((el) => {
-          (el as HTMLElement).style.setProperty('display', 'none', 'important');
-        });
-        const clonedTarget = doc.querySelector('.print-sheet, .statement-sheet, .dual-print-primary, main') as HTMLElement | null;
-        if (clonedTarget) {
-          clonedTarget.style.overflow = 'visible';
-          clonedTarget.style.maxHeight = 'none';
-          clonedTarget.style.height = 'auto';
-          clonedTarget.style.boxShadow = 'none';
-          clonedTarget.style.borderRadius = '0';
-        }
       },
     });
+
+    if (!canvas.width || !canvas.height) {
+      throw new Error('تعذر رسم صفحة PDF — جرّب مرة أخرى');
+    }
 
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -109,10 +233,7 @@ export async function triggerPdfSave(fileName = defaultPdfName()) {
     const safeName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
     pdf.save(safeName);
   } finally {
-    target.style.overflow = prevOverflow;
-    target.style.maxHeight = prevMaxHeight;
-    target.style.height = prevHeight;
-    document.body.classList.remove('pdf-capture');
+    host.remove();
   }
 }
 

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowRightLeft, ClipboardList, FileText, Plus, Printer, ShoppingBag, Trash2, XCircle } from 'lucide-react';
 import { api, formatDate, formatMoney } from '../lib/api';
 import { exportInvoiceExcel } from '../lib/docExport';
+import { afterPaint, runSilentPrint } from '../lib/silentDoc';
 import { useConfirm, useToast } from '../lib/feedback';
 import { DocExportBar } from '../components/DocExportBar';
 import { DualPrintCopies } from '../components/DualPrintCopies';
+import { SilentPrintMount } from '../components/SilentPrintMount';
 import { ProductPicker } from '../components/ProductPicker';
 import { productsForWarehouse } from '../lib/productWarehouse';
 import {
@@ -52,6 +54,7 @@ export function DocumentsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [open, setOpen] = useState(false);
   const [printDoc, setPrintDoc] = useState<Doc | null>(null);
+  const [silentPrint, setSilentPrint] = useState<Doc | null>(null);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'CONVERTED' | 'CANCELLED'>('ALL');
@@ -141,9 +144,10 @@ export function DocumentsPage() {
     }
   }
 
-  function printQuotation(doc: Doc) {
-    setPrintDoc(doc);
-    window.setTimeout(() => window.print(), 300);
+  async function printQuotation(doc: Doc) {
+    setSilentPrint(doc);
+    await afterPaint();
+    runSilentPrint(() => setSilentPrint(null));
   }
 
   async function act(doc: Doc, action: 'convert' | 'cancel') {
@@ -344,35 +348,47 @@ export function DocumentsPage() {
                 totals: [['الإجمالي', printDoc.total]],
               })}
             />
-            <DualPrintCopies dense={(printDoc.lines || []).length > 8}>
-              <PrintHeader title={`${KINDS.find((k) => k.id === printDoc.kind)?.label || 'مستند'} ${printDoc.number}`} subtitle={printDoc.customer?.name || printDoc.supplier?.name || ''} />
-              <div className="mb-2 text-sm text-slate-600">
-                {printDoc.customer?.name || printDoc.supplier?.name || '—'} · {printDoc.warehouse?.name || 'بدون مخزن'} · {formatDate(printDoc.docDate)}
-              </div>
-              <Table>
-                <thead>
-                  <tr><Th>الصنف</Th><Th>الكمية</Th><Th>السعر</Th><Th>الإجمالي</Th></tr>
-                </thead>
-                <tbody>
-                  {(printDoc.lines || []).map((line) => (
-                    <tr key={line.id}>
-                      <Td>{line.product?.name || '—'}</Td>
-                      <Td>{line.quantity}</Td>
-                      <Td>{formatMoney(line.unitPrice)}</Td>
-                      <Td>{formatMoney(line.total)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-              <div className="mt-2 flex justify-between text-sm font-extrabold">
-                <span>الإجمالي</span>
-                <span>{formatMoney(printDoc.total)}</span>
-              </div>
-              {printDoc.notes && <p className="mt-2 text-xs text-slate-600">{printDoc.notes}</p>}
-            </DualPrintCopies>
+            <DocumentPrintSheet doc={printDoc} />
           </div>
         )}
       </Modal>
+
+      {silentPrint && (
+        <SilentPrintMount>
+          <DocumentPrintSheet doc={silentPrint} />
+        </SilentPrintMount>
+      )}
     </div>
+  );
+}
+
+function DocumentPrintSheet({ doc }: { doc: Doc }) {
+  return (
+    <DualPrintCopies dense={(doc.lines || []).length > 8}>
+      <PrintHeader title={`${KINDS.find((k) => k.id === doc.kind)?.label || 'مستند'} ${doc.number}`} subtitle={doc.customer?.name || doc.supplier?.name || ''} />
+      <div className="mb-2 text-sm text-slate-600">
+        {doc.customer?.name || doc.supplier?.name || '—'} · {doc.warehouse?.name || 'بدون مخزن'} · {formatDate(doc.docDate)}
+      </div>
+      <Table>
+        <thead>
+          <tr><Th>الصنف</Th><Th>الكمية</Th><Th>السعر</Th><Th>الإجمالي</Th></tr>
+        </thead>
+        <tbody>
+          {(doc.lines || []).map((line) => (
+            <tr key={line.id}>
+              <Td>{line.product?.name || '—'}</Td>
+              <Td>{line.quantity}</Td>
+              <Td>{formatMoney(line.unitPrice)}</Td>
+              <Td>{formatMoney(line.total)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      <div className="mt-2 flex justify-between text-sm font-extrabold">
+        <span>الإجمالي</span>
+        <span>{formatMoney(doc.total)}</span>
+      </div>
+      {doc.notes && <p className="mt-2 text-xs text-slate-600">{doc.notes}</p>}
+    </DualPrintCopies>
   );
 }
